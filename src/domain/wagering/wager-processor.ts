@@ -3,6 +3,7 @@ import { LedgerDirection, type WalletLedgerEntry } from '../wallet/wallet-ledger
 import { FailureCode } from './failure-code';
 import type { PolicyContext, WagerDecision, WagerPolicy } from './policies/wager-policy';
 import {
+  InvalidTransactionStateError,
   InvalidWagerTransactionError,
   type WagerTransaction,
   WagerTransactionKind,
@@ -28,7 +29,7 @@ export class WagerProcessor {
   process(input: ProcessInput): WalletLedgerEntry | undefined {
     const { transaction, wallet, now } = input;
     if (transaction.isTerminal()) {
-      throw new InvalidWagerTransactionError(
+      throw new InvalidTransactionStateError(
         `cannot process terminal transaction ${transaction.id} with status ${transaction.status}`,
       );
     }

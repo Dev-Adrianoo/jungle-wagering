@@ -3,6 +3,7 @@ import { FailureCode } from '../../../src/domain/wagering/failure-code';
 import { defaultPolicies } from '../../../src/domain/wagering/policies/default-policies';
 import { WagerProcessor } from '../../../src/domain/wagering/wager-processor';
 import {
+  InvalidTransactionStateError,
   InvalidWagerTransactionError,
   WagerTransactionKind as Kind,
   WagerTransactionStatus as Status,
@@ -324,7 +325,7 @@ describe('a terminal transaction', () => {
     const balanceAfterFirst = wallet.balance.toJSON().amount;
     const versionAfterFirst = wallet.version;
 
-    expect(() => run(tx, wallet)).toThrow(InvalidWagerTransactionError);
+    expect(() => run(tx, wallet)).toThrow(InvalidTransactionStateError);
     expect(wallet.balance.toJSON().amount).toBe(balanceAfterFirst);
     expect(wallet.version).toBe(versionAfterFirst);
   });
@@ -337,7 +338,7 @@ describe('a terminal transaction', () => {
     expect(tx.status).toBe(Status.Rejected);
 
     const walletWithFunds = aWallet('100.00');
-    expect(() => run(tx, walletWithFunds)).toThrow(InvalidWagerTransactionError);
+    expect(() => run(tx, walletWithFunds)).toThrow(InvalidTransactionStateError);
     expect(walletWithFunds.balance.toJSON().amount).toBe('100.00');
     expect(walletWithFunds.version).toBe(1);
   });
