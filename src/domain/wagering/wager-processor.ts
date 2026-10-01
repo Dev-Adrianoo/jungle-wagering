@@ -27,6 +27,11 @@ export class WagerProcessor {
 
   process(input: ProcessInput): WalletLedgerEntry | undefined {
     const { transaction, wallet, now } = input;
+    if (transaction.isTerminal()) {
+      throw new InvalidWagerTransactionError(
+        `cannot process terminal transaction ${transaction.id} with status ${transaction.status}`,
+      );
+    }
     const policy = this.policies.get(transaction.kind);
     if (!policy) {
       throw new InvalidWagerTransactionError(`no policy registered for ${transaction.kind}`);

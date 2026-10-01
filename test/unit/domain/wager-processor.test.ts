@@ -314,3 +314,31 @@ describe('reprocessing a PENDING_REFERENCE transaction', () => {
     expect(wallet.balance.toJSON().amount).toBe('100.00');
   });
 });
+
+describe('a terminal transaction', () => {
+  test('throws when processing an already PROCESSED transaction without mutating the wallet', () => {
+    const wallet = aWallet('100.00');
+    const tx = aTransaction({ money: brl('80.00') });
+
+    run(tx, wallet);
+    const balanceAfterFirst = wallet.balance.toJSON().amount;
+    const versionAfterFirst = wallet.version;
+
+    expect(() => run(tx, wallet)).toThrow(InvalidWagerTransactionError);
+    expect(wallet.balance.toJSON().amount).toBe(balanceAfterFirst);
+    expect(wallet.version).toBe(versionAfterFirst);
+  });
+
+  test('throws when processing an already REJECTED transaction without mutating the wallet', () => {
+    const wallet = aWallet('20.00');
+    const tx = aTransaction({ money: brl('80.00') });
+
+    run(tx, wallet);
+    expect(tx.status).toBe(Status.Rejected);
+
+    const walletWithFunds = aWallet('100.00');
+    expect(() => run(tx, walletWithFunds)).toThrow(InvalidWagerTransactionError);
+    expect(walletWithFunds.balance.toJSON().amount).toBe('100.00');
+    expect(walletWithFunds.version).toBe(1);
+  });
+});
