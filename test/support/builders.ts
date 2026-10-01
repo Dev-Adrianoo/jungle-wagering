@@ -1,4 +1,11 @@
 import { Money } from '../../src/domain/money/money';
+import {
+  type CreateWagerTransactionProps,
+  WagerTransaction,
+  WagerTransactionKind,
+  type WagerTransactionState,
+  WagerTransactionStatus,
+} from '../../src/domain/wagering/wager-transaction';
 import { Wallet, type WalletState } from '../../src/domain/wallet/wallet';
 
 export const AT = new Date('2026-10-01T12:00:00.000Z');
@@ -17,6 +24,56 @@ export function aWallet(balance: string, overrides: Partial<WalletState> = {}): 
     version: 1,
     createdAt: AT,
     updatedAt: AT,
+    ...overrides,
+  });
+}
+
+export function aTransaction(
+  overrides: Partial<CreateWagerTransactionProps> = {},
+): WagerTransaction {
+  return WagerTransaction.create({
+    id: 'tx-1',
+    providerId: 'provider-a',
+    externalTransactionId: 'ext-1',
+    idempotencyKey: 'provider-a:ext-1',
+    payloadHash: 'a'.repeat(64),
+    walletId: WALLET_ID,
+    playerId: PLAYER_ID,
+    roundId: 'round-1',
+    gameId: 'fortune-chimp',
+    kind: WagerTransactionKind.Bet,
+    money: brl('25.00'),
+    referenceExternalTransactionId: undefined,
+    correlationId: 'corr-1',
+    createdAt: AT,
+    ...overrides,
+  });
+}
+
+export function aProcessed(overrides: Partial<WagerTransactionState> = {}): WagerTransaction {
+  return WagerTransaction.rehydrate({
+    id: 'tx-ref',
+    providerId: 'provider-a',
+    externalTransactionId: 'ext-ref',
+    idempotencyKey: 'provider-a:ext-ref',
+    payloadHash: 'b'.repeat(64),
+    walletId: WALLET_ID,
+    playerId: PLAYER_ID,
+    roundId: 'round-1',
+    gameId: 'fortune-chimp',
+    kind: WagerTransactionKind.Bet,
+    money: brl('25.00'),
+    referenceExternalTransactionId: undefined,
+    correlationId: 'corr-ref',
+    createdAt: AT,
+    status: WagerTransactionStatus.Processed,
+    referenceTransactionId: undefined,
+    failureCode: undefined,
+    observedBalance: brl('75.00'),
+    referenceAttempts: 0,
+    nextAttemptAt: undefined,
+    updatedAt: AT,
+    processedAt: AT,
     ...overrides,
   });
 }
