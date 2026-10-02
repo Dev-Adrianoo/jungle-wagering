@@ -5,3 +5,4 @@ export const METRICS = Symbol('Metrics');
 export const LOGGER = Symbol('Logger');
 export const SQS_CLIENT = Symbol('SqsClient');
 export const QUEUE_URLS = Symbol('QueueUrls');
+export const WORKERS = Symbol('Workers');

@@ -15,6 +15,9 @@ const schema = z.object({
   SQS_TRANSACTIONS_QUEUE: fifoQueueName.default('wager-transactions.fifo'),
   SQS_DLQ_QUEUE: fifoQueueName.default('wager-transactions-dlq.fifo'),
   SQS_EVENTS_QUEUE: fifoQueueName.default('wager-events.fifo'),
+  WORKERS_ENABLED: z.enum(['true', 'false']).default('true'),
+  SQS_WAIT_TIME_SECONDS: z.coerce.number().int().min(0).max(20).default(5),
+  FAULT_CRASH_AT: z.string().min(1).optional(),
 });
 
 export interface SqsConfig {
@@ -31,6 +34,9 @@ export interface AppConfig {
   lockTimeoutMs: number;
   authMode: 'noop';
   logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
+  workersEnabled: boolean;
+  sqsWaitTimeSeconds: number;
+  crashAt: string | undefined;
   sqs: SqsConfig;
 }
 
@@ -48,6 +54,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     lockTimeoutMs: parsed.data.LOCK_TIMEOUT_MS,
     authMode: parsed.data.AUTH_MODE,
     logLevel: parsed.data.LOG_LEVEL,
+    workersEnabled: parsed.data.WORKERS_ENABLED === 'true',
+    sqsWaitTimeSeconds: parsed.data.SQS_WAIT_TIME_SECONDS,
+    crashAt: parsed.data.FAULT_CRASH_AT,
     sqs: {
       endpoint: parsed.data.SQS_ENDPOINT,
       region: parsed.data.AWS_REGION,

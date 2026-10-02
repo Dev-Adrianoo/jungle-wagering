@@ -20,9 +20,9 @@ export interface CallOptions {
 export async function startTestApp(
   db: TestDatabase,
   overrides: AppOverrides = {},
-  queues?: TestQueues,
+  options: { queues?: TestQueues; workers?: boolean } = {},
 ): Promise<TestApp> {
-  const ownedQueues = queues ?? (await createTestQueues());
+  const ownedQueues = options.queues ?? (await createTestQueues());
   const app = await createApp(
     {
       port: 0,
@@ -30,6 +30,9 @@ export async function startTestApp(
       lockTimeoutMs: 3000,
       authMode: 'noop',
       logLevel: 'silent',
+      workersEnabled: options.workers ?? false,
+      sqsWaitTimeSeconds: 1,
+      crashAt: undefined,
       sqs: ownedQueues.config,
     },
     overrides,
@@ -41,7 +44,7 @@ export async function startTestApp(
     queues: ownedQueues,
     close: async () => {
       await app.close();
-      if (queues === undefined) {
+      if (options.queues === undefined) {
         await ownedQueues.destroy();
       }
     },
