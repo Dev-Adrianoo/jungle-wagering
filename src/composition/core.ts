@@ -12,6 +12,9 @@ import { TransactionQueries } from '../application/queries/transaction-queries';
 import { WalletQueries } from '../application/queries/wallet-queries';
 import { OpenWallet } from '../application/use-cases/open-wallet';
 import { ReconcileWallet } from '../application/use-cases/reconcile-wallet';
+import { SubmitWagerTransaction } from '../application/use-cases/submit-wager-transaction';
+import { defaultPolicies } from '../domain/wagering/policies/default-policies';
+import { WagerProcessor } from '../domain/wagering/wager-processor';
 import { MikroOrmUnitOfWork } from '../infrastructure/persistence/mikro-orm-unit-of-work';
 import { MikroOrmLedgerRepository } from '../infrastructure/persistence/repositories/ledger-repository';
 import { MikroOrmOutboxRepository } from '../infrastructure/persistence/repositories/outbox-repository';
@@ -39,6 +42,7 @@ export interface Core {
   walletQueries: WalletQueries;
   transactionQueries: TransactionQueries;
   reconcileWallet: ReconcileWallet;
+  submitWager: SubmitWagerTransaction;
 }
 
 export function buildCore(orm: MikroORM, options: CoreOptions): Core {
@@ -49,6 +53,7 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
   const transactions = new MikroOrmTransactionRepository(uow);
   const ledger = new MikroOrmLedgerRepository(uow);
   const outbox = options.outbox ?? new MikroOrmOutboxRepository(uow);
+  const processor = new WagerProcessor(defaultPolicies());
   return {
     uow,
     clock,
@@ -61,5 +66,15 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
     walletQueries: new WalletQueries(uow, wallets, ledger),
     transactionQueries: new TransactionQueries(uow, transactions),
     reconcileWallet: new ReconcileWallet(uow, ledger),
+    submitWager: new SubmitWagerTransaction({
+      uow,
+      wallets,
+      transactions,
+      ledger,
+      outbox,
+      processor,
+      clock,
+      ids,
+    }),
   };
 }
