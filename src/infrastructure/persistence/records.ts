@@ -42,6 +42,7 @@ export class WagerTransactionRecord {
   status!: string;
   failureCode!: string | null;
   observedBalance!: string;
+  observedBalanceCurrency!: string;
   referenceAttempts!: number;
   nextAttemptAt!: Date | null;
   correlationId!: string;
@@ -71,6 +72,7 @@ export const WagerTransactionSchema = new EntitySchema<WagerTransactionRecord>({
     status: { type: 'string' },
     failureCode: { type: 'string', nullable: true },
     observedBalance: { type: 'decimal', precision: 20, scale: 2 },
+    observedBalanceCurrency: { type: 'string' },
     referenceAttempts: { type: 'integer' },
     nextAttemptAt: { type: 'datetime', nullable: true },
     correlationId: { type: 'string' },

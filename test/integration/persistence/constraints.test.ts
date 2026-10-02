@@ -69,6 +69,7 @@ async function insertTransaction(walletId: string, overrides: Record<string, unk
     status: 'PROCESSED',
     failure_code: null,
     observed_balance: '75.00',
+    observed_balance_currency: 'BRL',
     next_attempt_at: null,
     processed_at: new Date(),
     ...overrides,
@@ -77,9 +78,9 @@ async function insertTransaction(walletId: string, overrides: Record<string, unk
     `insert into wager_transactions
        (id, provider_id, external_transaction_id, idempotency_key, payload_hash, wallet_id,
         player_id, round_id, game_id, kind, amount, currency, reference_external_transaction_id,
-        reference_transaction_id, status, failure_code, observed_balance, next_attempt_at,
-        correlation_id, created_at, updated_at, processed_at)
-     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'corr', now(), now(), ?)`,
+        reference_transaction_id, status, failure_code, observed_balance, observed_balance_currency,
+        next_attempt_at, correlation_id, created_at, updated_at, processed_at)
+     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'corr', now(), now(), ?)`,
     [
       row.id,
       row.provider_id,
@@ -98,6 +99,7 @@ async function insertTransaction(walletId: string, overrides: Record<string, unk
       row.status,
       row.failure_code,
       row.observed_balance,
+      row.observed_balance_currency,
       row.next_attempt_at,
       row.processed_at,
     ],

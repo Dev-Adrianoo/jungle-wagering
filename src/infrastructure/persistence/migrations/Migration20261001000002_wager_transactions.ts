@@ -21,6 +21,7 @@ export class Migration20261001000002_wager_transactions extends Migration {
         status text NOT NULL,
         failure_code text,
         observed_balance numeric(20,2) NOT NULL,
+        observed_balance_currency char(3) NOT NULL,
         reference_attempts integer NOT NULL DEFAULT 0,
         next_attempt_at timestamptz,
         correlation_id text NOT NULL,
@@ -79,10 +80,14 @@ export class Migration20261001000002_wager_transactions extends Migration {
             USING ERRCODE = 'restrict_violation';
         END IF;
         IF (NEW.id, NEW.provider_id, NEW.external_transaction_id, NEW.idempotency_key,
-            NEW.payload_hash, NEW.wallet_id, NEW.player_id, NEW.kind, NEW.amount, NEW.currency)
+            NEW.payload_hash, NEW.wallet_id, NEW.player_id, NEW.kind, NEW.amount, NEW.currency,
+            NEW.reference_external_transaction_id, NEW.round_id, NEW.game_id,
+            NEW.correlation_id, NEW.created_at)
            IS DISTINCT FROM
            (OLD.id, OLD.provider_id, OLD.external_transaction_id, OLD.idempotency_key,
-            OLD.payload_hash, OLD.wallet_id, OLD.player_id, OLD.kind, OLD.amount, OLD.currency)
+            OLD.payload_hash, OLD.wallet_id, OLD.player_id, OLD.kind, OLD.amount, OLD.currency,
+            OLD.reference_external_transaction_id, OLD.round_id, OLD.game_id,
+            OLD.correlation_id, OLD.created_at)
         THEN
           RAISE EXCEPTION 'wager transaction % identity columns are immutable', OLD.id
             USING ERRCODE = 'restrict_violation';
