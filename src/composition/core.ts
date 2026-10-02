@@ -8,6 +8,10 @@ import type { OutboxRepository } from '../application/ports/outbox-repository';
 import type { TransactionRepository } from '../application/ports/transaction-repository';
 import type { UnitOfWork } from '../application/ports/unit-of-work';
 import type { WalletRepository } from '../application/ports/wallet-repository';
+import { TransactionQueries } from '../application/queries/transaction-queries';
+import { WalletQueries } from '../application/queries/wallet-queries';
+import { OpenWallet } from '../application/use-cases/open-wallet';
+import { ReconcileWallet } from '../application/use-cases/reconcile-wallet';
 import { MikroOrmUnitOfWork } from '../infrastructure/persistence/mikro-orm-unit-of-work';
 import { MikroOrmLedgerRepository } from '../infrastructure/persistence/repositories/ledger-repository';
 import { MikroOrmOutboxRepository } from '../infrastructure/persistence/repositories/outbox-repository';
@@ -31,17 +35,31 @@ export interface Core {
   transactions: TransactionRepository;
   ledger: LedgerRepository;
   outbox: OutboxRepository;
+  openWallet: OpenWallet;
+  walletQueries: WalletQueries;
+  transactionQueries: TransactionQueries;
+  reconcileWallet: ReconcileWallet;
 }
 
 export function buildCore(orm: MikroORM, options: CoreOptions): Core {
   const uow = new MikroOrmUnitOfWork(orm, options.lockTimeoutMs);
+  const clock = options.clock ?? new SystemClock();
+  const ids = options.ids ?? new UuidV7IdGenerator();
+  const wallets = new MikroOrmWalletRepository(uow);
+  const transactions = new MikroOrmTransactionRepository(uow);
+  const ledger = new MikroOrmLedgerRepository(uow);
+  const outbox = options.outbox ?? new MikroOrmOutboxRepository(uow);
   return {
     uow,
-    clock: options.clock ?? new SystemClock(),
-    ids: options.ids ?? new UuidV7IdGenerator(),
-    wallets: new MikroOrmWalletRepository(uow),
-    transactions: new MikroOrmTransactionRepository(uow),
-    ledger: new MikroOrmLedgerRepository(uow),
-    outbox: options.outbox ?? new MikroOrmOutboxRepository(uow),
+    clock,
+    ids,
+    wallets,
+    transactions,
+    ledger,
+    outbox,
+    openWallet: new OpenWallet({ uow, wallets, transactions, ledger, outbox, clock, ids }),
+    walletQueries: new WalletQueries(uow, wallets, ledger),
+    transactionQueries: new TransactionQueries(uow, transactions),
+    reconcileWallet: new ReconcileWallet(uow, ledger),
   };
 }
