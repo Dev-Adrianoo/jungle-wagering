@@ -454,6 +454,9 @@ describe('atomicity', () => {
         insert: async () => {
           throw new Error('outbox is down');
         },
+        claimDue: async () => [],
+        save: async () => {},
+        stats: async () => ({ pending: 0, lagSeconds: 0 }),
       },
     });
 

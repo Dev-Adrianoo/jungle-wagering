@@ -2,6 +2,8 @@
 // build the application through here, so there is one wiring to keep correct.
 import type { MikroORM } from '@mikro-orm/postgresql';
 import type { Clock } from '../application/ports/clock';
+import type { CrashPoint } from '../application/ports/crash-point';
+import type { EventPublisher } from '../application/ports/event-publisher';
 import type { IdGenerator } from '../application/ports/id-generator';
 import type { InboxRepository } from '../application/ports/inbox-repository';
 import type { LedgerRepository } from '../application/ports/ledger-repository';
@@ -14,6 +16,7 @@ import type { WalletRepository } from '../application/ports/wallet-repository';
 import { TransactionQueries } from '../application/queries/transaction-queries';
 import { WalletQueries } from '../application/queries/wallet-queries';
 import { OpenWallet } from '../application/use-cases/open-wallet';
+import { PublishOutbox } from '../application/use-cases/publish-outbox';
 import { ReconcileWallet } from '../application/use-cases/reconcile-wallet';
 import { SubmitWagerTransaction } from '../application/use-cases/submit-wager-transaction';
 import { defaultPolicies } from '../domain/wagering/policies/default-policies';
@@ -26,6 +29,7 @@ import { MikroOrmLedgerRepository } from '../infrastructure/persistence/reposito
 import { MikroOrmOutboxRepository } from '../infrastructure/persistence/repositories/outbox-repository';
 import { MikroOrmTransactionRepository } from '../infrastructure/persistence/repositories/transaction-repository';
 import { MikroOrmWalletRepository } from '../infrastructure/persistence/repositories/wallet-repository';
+import { NoopCrashPoint } from '../infrastructure/system/noop-crash-point';
 import { SystemClock } from '../infrastructure/system/system-clock';
 import { UuidV7IdGenerator } from '../infrastructure/system/uuid-v7-id-generator';
 
@@ -36,6 +40,9 @@ export interface CoreOptions {
   outbox?: OutboxRepository;
   logger?: Logger;
   metrics?: Metrics;
+  publisher?: EventPublisher;
+  crashPoint?: CrashPoint;
+  decorateOutbox?: (outbox: OutboxRepository) => OutboxRepository;
 }
 
 export interface Core {
@@ -54,6 +61,8 @@ export interface Core {
   transactionQueries: TransactionQueries;
   reconcileWallet: ReconcileWallet;
   submitWager: SubmitWagerTransaction;
+  publishOutbox: PublishOutbox;
+  crashPoint: CrashPoint;
 }
 
 export function buildCore(orm: MikroORM, options: CoreOptions): Core {
@@ -65,7 +74,10 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
   const wallets = new MikroOrmWalletRepository(uow);
   const transactions = new MikroOrmTransactionRepository(uow);
   const ledger = new MikroOrmLedgerRepository(uow);
-  const outbox = options.outbox ?? new MikroOrmOutboxRepository(uow);
+  const baseOutbox = options.outbox ?? new MikroOrmOutboxRepository(uow);
+  const outbox = options.decorateOutbox ? options.decorateOutbox(baseOutbox) : baseOutbox;
+  const crashPoint = options.crashPoint ?? new NoopCrashPoint();
+  const publisher = options.publisher ?? { publish: async () => new Set<string>() };
   const inbox = new MikroOrmInboxRepository(uow);
   const processor = new WagerProcessor(defaultPolicies());
   return {
@@ -96,5 +108,15 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
       logger,
       metrics,
     }),
+    publishOutbox: new PublishOutbox({
+      uow,
+      outbox,
+      publisher,
+      clock,
+      metrics,
+      logger,
+      crashPoint,
+    }),
+    crashPoint,
   };
 }
