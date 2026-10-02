@@ -1,9 +1,10 @@
-# Bring the application stack up without touching running postgres/localstack:
-#   docker compose up -d --build --wait --no-recreate setup app-1 app-2 app-3 nginx
-# The host port of the load balancer is APP_PORT (default 3000).
+# `docker compose up --build` starts PostgreSQL, LocalStack, a one-off setup (migrations and
+# queues) and three application instances behind nginx. The image is built once, by setup,
+# and reused by the instances. Host ports can be changed with APP_PORT (3000), POSTGRES_PORT
+# (5440) and LOCALSTACK_PORT (4566).
 # stop_grace_period must exceed the SQS long poll (SQS_WAIT_TIME_SECONDS) plus the tick in flight.
 x-app: &app
-  build: .
+  image: jungle-wagering-app
   environment: &app-environment
     PORT: "3000"
     DATABASE_URL: postgres://wagering:wagering@postgres:5432/wagering
@@ -28,7 +29,7 @@ services:
       POSTGRES_PASSWORD: wagering
       POSTGRES_DB: wagering
     ports:
-      - "5440:5432"
+      - "${POSTGRES_PORT:-5440}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wagering -d wagering"]
       interval: 2s
@@ -43,7 +44,7 @@ services:
       SERVICES: sqs
       EAGER_SERVICE_LOADING: "1"
     ports:
-      - "4566:4566"
+      - "${LOCALSTACK_PORT:-4566}:4566"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"sqs\": \"\\(running\\|available\\)\"'"]
       interval: 2s
@@ -52,6 +53,7 @@ services:
 
   setup:
     build: .
+    image: jungle-wagering-app
     command: ["bun", "run", "src/setup.ts"]
     environment: *app-environment
     restart: "no"
