@@ -3,6 +3,7 @@
 import type { MikroORM } from '@mikro-orm/postgresql';
 import type { Clock } from '../application/ports/clock';
 import type { IdGenerator } from '../application/ports/id-generator';
+import type { InboxRepository } from '../application/ports/inbox-repository';
 import type { LedgerRepository } from '../application/ports/ledger-repository';
 import type { Logger } from '../application/ports/logger';
 import type { Metrics } from '../application/ports/metrics';
@@ -20,6 +21,7 @@ import { WagerProcessor } from '../domain/wagering/wager-processor';
 import { NoopMetrics } from '../infrastructure/observability/noop-metrics';
 import { SilentLogger } from '../infrastructure/observability/silent-logger';
 import { MikroOrmUnitOfWork } from '../infrastructure/persistence/mikro-orm-unit-of-work';
+import { MikroOrmInboxRepository } from '../infrastructure/persistence/repositories/inbox-repository';
 import { MikroOrmLedgerRepository } from '../infrastructure/persistence/repositories/ledger-repository';
 import { MikroOrmOutboxRepository } from '../infrastructure/persistence/repositories/outbox-repository';
 import { MikroOrmTransactionRepository } from '../infrastructure/persistence/repositories/transaction-repository';
@@ -44,6 +46,7 @@ export interface Core {
   transactions: TransactionRepository;
   ledger: LedgerRepository;
   outbox: OutboxRepository;
+  inbox: InboxRepository;
   logger: Logger;
   metrics: Metrics;
   openWallet: OpenWallet;
@@ -63,6 +66,7 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
   const transactions = new MikroOrmTransactionRepository(uow);
   const ledger = new MikroOrmLedgerRepository(uow);
   const outbox = options.outbox ?? new MikroOrmOutboxRepository(uow);
+  const inbox = new MikroOrmInboxRepository(uow);
   const processor = new WagerProcessor(defaultPolicies());
   return {
     uow,
@@ -72,6 +76,7 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
     transactions,
     ledger,
     outbox,
+    inbox,
     logger,
     metrics,
     openWallet: new OpenWallet({ uow, wallets, transactions, ledger, outbox, clock, ids }),
@@ -84,6 +89,7 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
       transactions,
       ledger,
       outbox,
+      inbox,
       processor,
       clock,
       ids,

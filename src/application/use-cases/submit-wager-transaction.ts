@@ -3,6 +3,7 @@
 // again under the lock, domain decision, then transaction + balance + ledger + outbox.
 // Nothing is published here: the outbox worker does that after the commit.
 import type { EventContext } from '../../domain/events/integration-event';
+import { InboxMessage } from '../../domain/messaging/inbox-message';
 import { OutboxMessage } from '../../domain/messaging/outbox-message';
 import { Money } from '../../domain/money/money';
 import type { WagerProcessor } from '../../domain/wagering/wager-processor';
@@ -10,6 +11,7 @@ import { WagerTransaction, WagerTransactionKind } from '../../domain/wagering/wa
 import {
   DuplicateExternalTransactionError,
   IdempotencyKeyConflictError,
+  MessageIdReusedError,
   UniqueViolationError,
   WalletNotFoundError,
 } from '../errors';
@@ -22,6 +24,7 @@ import {
 import { safely } from '../observability/safely';
 import type { Clock } from '../ports/clock';
 import type { IdGenerator } from '../ports/id-generator';
+import type { InboxRepository } from '../ports/inbox-repository';
 import type { LedgerRepository } from '../ports/ledger-repository';
 import type { Logger } from '../ports/logger';
 import type { Metrics } from '../ports/metrics';
@@ -44,12 +47,23 @@ export interface SubmitWagerDependencies {
   transactions: TransactionRepository;
   ledger: LedgerRepository;
   outbox: OutboxRepository;
+  inbox: InboxRepository;
   processor: WagerProcessor;
   clock: Clock;
   ids: IdGenerator;
   logger: Logger;
   metrics: Metrics;
 }
+
+export interface InboxEnvelope {
+  consumerName: string;
+  messageId: string;
+  payloadHash: string;
+}
+
+export type MessageOutcome = { duplicate: true } | { duplicate: false; result: SubmitWagerResult };
+
+const DUPLICATE_MESSAGE = Symbol('duplicate message');
 
 const KINDS: Record<SubmittableKind, WagerTransactionKind> = {
   BET: WagerTransactionKind.Bet,
@@ -71,8 +85,48 @@ export class SubmitWagerTransaction {
     const startedAt = performance.now();
     try {
       const result = await this.submit(command);
+      if (result === DUPLICATE_MESSAGE) {
+        throw new Error('a request without inbox cannot be a duplicate message');
+      }
       this.record(command, result);
       return result;
+    } catch (error) {
+      if (error instanceof IdempotencyKeyConflictError) {
+        safely(() => this.deps.metrics.idempotencyConflict());
+      }
+      throw error;
+    } finally {
+      safely(() =>
+        this.deps.metrics.processingObserved(
+          (performance.now() - startedAt) / 1000,
+          command.source,
+        ),
+      );
+    }
+  }
+
+  // The inbox row is written in the same SQL transaction as the financial effect and is
+  // already marked processed: either both commit or neither does, so a redelivery after a
+  // crash finds no row and processes the message, and one after a commit finds it and stops.
+  async executeFromMessage(
+    command: SubmitWagerCommand,
+    inbox: InboxEnvelope,
+  ): Promise<MessageOutcome> {
+    const startedAt = performance.now();
+    try {
+      const result = await this.submit(command, inbox);
+      if (result === DUPLICATE_MESSAGE) {
+        safely(() => this.deps.metrics.duplicateDetected(command.source));
+        safely(() =>
+          this.deps.logger.info('wager.duplicate_message', {
+            correlationId: command.correlationId,
+            messageId: inbox.messageId,
+          }),
+        );
+        return { duplicate: true };
+      }
+      this.record(command, result);
+      return { duplicate: false, result };
     } catch (error) {
       if (error instanceof IdempotencyKeyConflictError) {
         safely(() => this.deps.metrics.idempotencyConflict());
@@ -91,13 +145,16 @@ export class SubmitWagerTransaction {
   // Two requests with the same key can both pass the lookup when they lock different
   // wallets. The unique constraint stops the second one; running it again makes it find
   // the first and answer with a replay or a conflict.
-  private async submit(command: SubmitWagerCommand): Promise<SubmitWagerResult> {
+  private async submit(
+    command: SubmitWagerCommand,
+    inbox?: InboxEnvelope,
+  ): Promise<SubmitWagerResult | typeof DUPLICATE_MESSAGE> {
     const payloadHash = hashWagerPayload(command.payload);
     try {
-      return await this.attempt(command, payloadHash);
+      return await this.attempt(command, payloadHash, inbox);
     } catch (error) {
       if (error instanceof UniqueViolationError && IDEMPOTENCY_CONSTRAINTS.has(error.constraint)) {
-        return this.attempt(command, payloadHash);
+        return this.attempt(command, payloadHash, inbox);
       }
       throw error;
     }
@@ -124,11 +181,19 @@ export class SubmitWagerTransaction {
     safely(() => logger.info('wager.transaction', fields));
   }
 
-  private attempt(command: SubmitWagerCommand, payloadHash: string): Promise<SubmitWagerResult> {
+  private attempt(
+    command: SubmitWagerCommand,
+    payloadHash: string,
+    inbox?: InboxEnvelope,
+  ): Promise<SubmitWagerResult | typeof DUPLICATE_MESSAGE> {
     const { uow, wallets, transactions, ledger, outbox, processor, clock, ids } = this.deps;
     const { payload } = command;
 
     return uow.run(async () => {
+      if (inbox && !(await this.claimMessage(inbox))) {
+        return DUPLICATE_MESSAGE;
+      }
+
       const replayBeforeLock = await this.findReplay(command, payloadHash);
       if (replayBeforeLock) {
         return replayBeforeLock;
@@ -209,6 +274,20 @@ export class SubmitWagerTransaction {
       }
       return toSubmitResult(transaction, false);
     });
+  }
+
+  private async claimMessage(inbox: InboxEnvelope): Promise<boolean> {
+    const now = this.deps.clock.now();
+    const received = InboxMessage.receive({ ...inbox, receivedAt: now });
+    received.markProcessed(now);
+    if (await this.deps.inbox.insertIfAbsent(received)) {
+      return true;
+    }
+    const existing = await this.deps.inbox.find(inbox.consumerName, inbox.messageId);
+    if (existing && existing.payloadHash !== inbox.payloadHash) {
+      throw new MessageIdReusedError(inbox.messageId);
+    }
+    return false;
   }
 
   private async findReplay(
