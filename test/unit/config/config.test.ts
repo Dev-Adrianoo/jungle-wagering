@@ -85,4 +85,32 @@ describe('loadConfig', () => {
       /SQS_WAIT_TIME_SECONDS/,
     );
   });
+
+  test('OIDC mode needs issuer, key set URL and audience', () => {
+    const oidc = {
+      DATABASE_URL: 'x',
+      AUTH_MODE: 'oidc',
+      OIDC_ISSUER: 'http://keycloak:8080/realms/wagering',
+      OIDC_JWKS_URL: 'http://keycloak:8080/realms/wagering/protocol/openid-connect/certs',
+      OIDC_AUDIENCE: 'wagering-api',
+    };
+
+    const config = loadConfig(oidc);
+
+    expect(config.authMode).toBe('oidc');
+    expect(config.oidc).toEqual({
+      issuer: 'http://keycloak:8080/realms/wagering',
+      jwksUrl: 'http://keycloak:8080/realms/wagering/protocol/openid-connect/certs',
+      audience: 'wagering-api',
+    });
+    for (const missing of ['OIDC_ISSUER', 'OIDC_JWKS_URL', 'OIDC_AUDIENCE']) {
+      expect(() => loadConfig({ ...oidc, [missing]: undefined })).toThrow(new RegExp(missing));
+    }
+  });
+
+  test('without OIDC mode the OIDC settings are not required and not exposed', () => {
+    expect(loadConfig({ DATABASE_URL: 'x' }).oidc).toBeUndefined();
+    expect(loadConfig({ DATABASE_URL: 'x', OIDC_ISSUER: 'http://ignored' }).oidc).toBeUndefined();
+    expect(() => loadConfig({ DATABASE_URL: 'x', AUTH_MODE: 'password' })).toThrow(/AUTH_MODE/);
+  });
 });
