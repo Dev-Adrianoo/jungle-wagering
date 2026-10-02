@@ -4,6 +4,7 @@
 import { randomUUID } from 'node:crypto';
 import { createParamDecorator, type ExecutionContext } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
+import { safely } from '../../application/observability/safely';
 import type { Logger } from '../../application/ports/logger';
 import { runWithLogContext } from '../../infrastructure/observability/log-context';
 
@@ -23,13 +24,15 @@ export function correlationMiddleware(logger: Logger) {
     const startedAt = performance.now();
     runWithLogContext({ correlationId }, () => {
       response.on('finish', () => {
-        logger.info('http.request', {
-          correlationId,
-          method: request.method,
-          path: request.path,
-          status: response.statusCode,
-          durationMs: Math.round(performance.now() - startedAt),
-        });
+        safely(() =>
+          logger.info('http.request', {
+            correlationId,
+            method: request.method,
+            path: request.path,
+            status: response.statusCode,
+            durationMs: Math.round(performance.now() - startedAt),
+          }),
+        );
       });
       next();
     });

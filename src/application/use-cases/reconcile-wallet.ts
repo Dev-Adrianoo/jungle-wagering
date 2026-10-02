@@ -1,4 +1,5 @@
 import { WalletNotFoundError } from '../errors';
+import { safely } from '../observability/safely';
 import type { LedgerRepository } from '../ports/ledger-repository';
 import type { Logger } from '../ports/logger';
 import type { Metrics } from '../ports/metrics';
@@ -31,11 +32,13 @@ export class ReconcileWallet {
         checkedEntries: summary.entries,
       };
       if (!view.consistent) {
-        this.metrics.reconciliationDivergence();
-        this.logger.error('reconciliation.divergence', {
-          walletId,
-          checkedEntries: view.checkedEntries,
-        });
+        safely(() => this.metrics.reconciliationDivergence());
+        safely(() =>
+          this.logger.error('reconciliation.divergence', {
+            walletId,
+            checkedEntries: view.checkedEntries,
+          }),
+        );
       }
       return view;
     });

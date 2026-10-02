@@ -19,6 +19,7 @@ import {
   type SubmittableKind,
   type WagerPayload,
 } from '../idempotency/payload-hash';
+import { safely } from '../observability/safely';
 import type { Clock } from '../ports/clock';
 import type { IdGenerator } from '../ports/id-generator';
 import type { LedgerRepository } from '../ports/ledger-repository';
@@ -74,11 +75,16 @@ export class SubmitWagerTransaction {
       return result;
     } catch (error) {
       if (error instanceof IdempotencyKeyConflictError) {
-        this.deps.metrics.idempotencyConflict();
+        safely(() => this.deps.metrics.idempotencyConflict());
       }
       throw error;
     } finally {
-      this.deps.metrics.processingObserved((performance.now() - startedAt) / 1000, command.source);
+      safely(() =>
+        this.deps.metrics.processingObserved(
+          (performance.now() - startedAt) / 1000,
+          command.source,
+        ),
+      );
     }
   }
 
@@ -100,6 +106,7 @@ export class SubmitWagerTransaction {
   private record(command: SubmitWagerCommand, result: SubmitWagerResult): void {
     const { logger, metrics } = this.deps;
     const fields = {
+      correlationId: command.correlationId,
       transactionId: result.transactionId,
       walletId: command.payload.walletId,
       providerId: command.payload.providerId,
@@ -109,12 +116,12 @@ export class SubmitWagerTransaction {
       failureCode: result.failureCode,
     };
     if (result.idempotentReplay) {
-      metrics.duplicateDetected(command.source);
-      logger.info('wager.replay', fields);
+      safely(() => metrics.duplicateDetected(command.source));
+      safely(() => logger.info('wager.replay', fields));
       return;
     }
-    metrics.transactionRecorded(result.status, command.payload.kind, command.source);
-    logger.info('wager.transaction', fields);
+    safely(() => metrics.transactionRecorded(result.status, command.payload.kind, command.source));
+    safely(() => logger.info('wager.transaction', fields));
   }
 
   private attempt(command: SubmitWagerCommand, payloadHash: string): Promise<SubmitWagerResult> {

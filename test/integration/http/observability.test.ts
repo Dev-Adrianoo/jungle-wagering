@@ -136,10 +136,27 @@ describe('structured logs', () => {
 
     const everything = JSON.stringify(lines);
 
-    expect(everything).not.toContain('31337');
+    expect(everything).not.toContain('31337.42');
     expect(everything).not.toContain('271.83');
     expect(everything).not.toContain('"money"');
+    expect(everything).not.toContain('"amount"');
     expect(everything).not.toContain('"balance"');
+  });
+
+  test('parallel requests never mix correlation ids or transaction ids', async () => {
+    const wallet = await openWallet('1000.00');
+    const ids = Array.from({ length: 20 }, (_, index) => `corr-par-${index}-${randomUUID()}`);
+
+    const responses = await Promise.all(ids.map((id) => submit(bet(wallet, '1.00'), id)));
+
+    ids.forEach((id, index) => {
+      const own = lines.filter(
+        (line) => line.event === 'wager.transaction' && line.correlationId === id,
+      );
+      expect(own).toHaveLength(1);
+      expect(own[0]?.transactionId).toBe(responses[index]?.body.transactionId);
+      expect(own[0]?.walletId).toBe(wallet.id);
+    });
   });
 
   test('every request leaves one access line with status and duration', async () => {

@@ -8,6 +8,7 @@ import {
   TransientInfrastructureError,
   UniqueViolationError,
 } from '../../application/errors';
+import { safely } from '../../application/observability/safely';
 import type { UnitOfWork } from '../../application/ports/unit-of-work';
 import { DomainError } from '../../domain/shared/domain-error';
 
@@ -94,7 +95,7 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
       });
     } catch (error) {
       if (errorCode(error) === LOCK_NOT_AVAILABLE) {
-        this.onLockConflict();
+        safely(this.onLockConflict);
       }
       throw translateDriverError(error);
     }
