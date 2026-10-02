@@ -157,7 +157,7 @@ export async function startCluster(options: {
     void child.exited.then(() => alive.delete(instance));
     await waitFor(async () => (await isReady(url)) || child.exitCode !== null, {
       timeoutMs: 30_000,
-      description: `instance on port ${port} to become ready\n${instance.output()}`,
+      description: () => `instance on port ${port} to become ready\n${instance.output()}`,
     });
     if (child.exitCode === null) {
       alive.add(instance);

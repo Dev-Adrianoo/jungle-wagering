@@ -83,9 +83,15 @@ function asMessage(data: Payload, messageId = `msg-${randomUUID()}`) {
   };
 }
 
-function instancesThatLogged(event: string): number {
+function entriesAbout(event: string, walletIds: string[]) {
+  return cluster.entries(event).filter((entry) => walletIds.includes(entry.walletId as string));
+}
+
+function instancesThatLogged(event: string, walletIds: string[]): number {
   return cluster.instances.filter((instance) =>
-    instance.entries().some((entry) => entry.event === event),
+    instance
+      .entries()
+      .some((entry) => entry.event === event && walletIds.includes(entry.walletId as string)),
   ).length;
 }
 
@@ -100,18 +106,20 @@ describe('three instances sharing one database', () => {
   test('the same bet sent 60 times at once to the three instances debits exactly once', async () => {
     const wallet = await openWallet('1000.00');
     const body = payload(wallet);
-    const recordedBefore = cluster.entries('wager.transaction').length;
-    const replaysBefore = cluster.entries('wager.replay').length;
 
     const responses = await Promise.all(Array.from({ length: 60 }, () => submit(body)));
 
     expect(statusesOf(responses), cluster.output()).toEqual({ 201: 1, 200: 59 });
     expect(new Set(responses.map((response) => response.body.transactionId)).size).toBe(1);
-    await waitFor(async () => cluster.entries('wager.replay').length - replaysBefore === 59, {
-      description: `the 59 replay log lines
+    await waitFor(
+      async () =>
+        entriesAbout('wager.replay', [wallet.id]).length === 59 &&
+        entriesAbout('wager.transaction', [wallet.id]).length === 1,
+      {
+        description: () => `one transaction log line and 59 replay log lines
 ${cluster.output()}`,
-    });
-    expect(cluster.entries('wager.transaction').length - recordedBefore).toBe(1);
+      },
+    );
     expect(await balanceOf(wallet.id)).toBe('975.00');
     expect(await debitsOf(wallet.id)).toBe(1);
     const stored = await db.query(
@@ -173,7 +181,10 @@ ${cluster.output()}`,
     expect(await debitsOf(wallet.id)).toBe(10);
     const negative = await db.query('select id from wallets where balance < 0');
     expect(negative).toHaveLength(0);
-    expect(instancesThatLogged('wager.transaction')).toBe(3);
+    await waitFor(async () => instancesThatLogged('wager.transaction', [wallet.id]) === 3, {
+      description: () => `every instance to log a bet of this wallet
+${cluster.output()}`,
+    });
     await expectLedgerMatchesBalance(db, wallet.id);
   });
 
@@ -195,13 +206,14 @@ ${cluster.output()}`,
   test('messages on the queue are consumed by three consumers, each applied once and in order per wallet', async () => {
     const wallets = await Promise.all(Array.from({ length: 8 }, () => openWallet('1000.00')));
     const amounts = ['1.00', '2.00', '3.00', '4.00', '5.00', '6.00', '7.00', '8.00'];
-    const transactionsBefore = cluster.entries('wager.transaction').length;
-    const duplicatesBefore = cluster.entries('wager.duplicate_message').length;
+    const walletIds = wallets.map((wallet) => wallet.id);
+    const messageIds = new Set<string>();
 
     await Promise.all(
       wallets.map(async (wallet) => {
         for (const amount of amounts) {
           const message = asMessage(payload(wallet, { money: { amount, currency: 'BRL' } }));
+          messageIds.add(message.messageId);
           await queues.send(message, { groupId: wallet.id });
           await queues.send(message, { groupId: wallet.id });
         }
@@ -218,7 +230,7 @@ ${cluster.output()}`,
           ? true
           : undefined;
       },
-      { timeoutMs: 60_000, description: `every message to be applied\n${cluster.output()}` },
+      { timeoutMs: 60_000, description: () => `every message to be applied\n${cluster.output()}` },
     );
 
     for (const wallet of wallets) {
@@ -233,15 +245,17 @@ ${cluster.output()}`,
     }
     await waitFor(
       async () =>
-        cluster.entries('wager.transaction').length - transactionsBefore === 64 &&
-        cluster.entries('wager.duplicate_message').length - duplicatesBefore >= 64,
+        entriesAbout('wager.transaction', walletIds).length === 64 &&
+        cluster
+          .entries('wager.duplicate_message')
+          .filter((entry) => messageIds.has(entry.messageId as string)).length >= 64 &&
+        instancesThatLogged('wager.transaction', walletIds) === 3,
       {
-        description: `the log lines of 64 applied messages and 64 duplicates
+        description: () => `64 applied and 64 duplicate log lines, with every instance applying some
 ${cluster.output()}`,
       },
     );
     expect(await queues.depth(queues.urls.deadLetter)).toBe(0);
-    expect(instancesThatLogged('wager.transaction')).toBe(3);
   });
 
   test('a REFUND that arrives on the queue before its BET is applied once the BET arrives', async () => {
@@ -260,14 +274,14 @@ ${cluster.output()}`,
 
     await queues.send(asMessage(refund), { groupId: wallet.id });
     await waitFor(async () => (await statusOfRefund()) === 'PENDING_REFERENCE', {
-      description: `the refund to be stored as pending\n${cluster.output()}`,
+      description: () => `the refund to be stored as pending\n${cluster.output()}`,
     });
     await queues.send(asMessage(bet), { groupId: wallet.id });
 
     await waitFor(async () => (await statusOfRefund()) === 'PROCESSED', {
       timeoutMs: 40_000,
       intervalMs: 500,
-      description: `the refund to be applied\n${cluster.output()}`,
+      description: () => `the refund to be applied\n${cluster.output()}`,
     });
 
     expect(await balanceOf(wallet.id)).toBe('100.00');
@@ -289,7 +303,7 @@ ${cluster.output()}`,
     await waitFor(
       async () =>
         (await db.query('select id from outbox_messages where published_at is null')).length === 0,
-      { timeoutMs: 40_000, description: `the outbox to be published\n${cluster.output()}` },
+      { timeoutMs: 40_000, description: () => `the outbox to be published\n${cluster.output()}` },
     );
 
     const expected = (await db.query<{ id: string }>('select id from outbox_messages'))

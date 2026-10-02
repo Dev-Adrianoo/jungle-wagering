@@ -2,7 +2,11 @@
 // condition holds and fails with a clear message when it never does.
 export async function waitFor<T>(
   probe: () => Promise<T | undefined | false>,
-  options: { timeoutMs?: number; intervalMs?: number; description?: string } = {},
+  options: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    description?: string | (() => string);
+  } = {},
 ): Promise<T> {
   const { timeoutMs = 15_000, intervalMs = 100, description = 'condition' } = options;
   const deadline = Date.now() + timeoutMs;
@@ -12,7 +16,8 @@ export async function waitFor<T>(
       return value;
     }
     if (Date.now() >= deadline) {
-      throw new Error(`timed out after ${timeoutMs}ms waiting for ${description}`);
+      const waitedFor = typeof description === 'function' ? description() : description;
+      throw new Error(`timed out after ${timeoutMs}ms waiting for ${waitedFor}`);
     }
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }

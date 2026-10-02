@@ -118,7 +118,7 @@ describe('a worker killed after the commit and before the ack', () => {
     await cluster.add({ WORKERS_ENABLED: 'true' });
     await waitFor(async () => (await queues.depth(queues.urls.transactions)) === 0, {
       timeoutMs: 30_000,
-      description: `the redelivered message to be acknowledged\n${cluster.output()}`,
+      description: () => `the redelivered message to be acknowledged\n${cluster.output()}`,
     });
 
     const debits = await db.query(
@@ -128,7 +128,7 @@ describe('a worker killed after the commit and before the ack', () => {
     expect(debits).toHaveLength(1);
     expect(await inboxCount(db)).toBe(1);
     await waitFor(async () => cluster.entries('wager.duplicate_message').length === 1, {
-      description: `the inbox to report the redelivery as a duplicate
+      description: () => `the inbox to report the redelivery as a duplicate
 ${cluster.output()}`,
     });
     expect(cluster.entries('wager.replay')).toHaveLength(0);
@@ -161,7 +161,7 @@ describe('a publisher killed after sending and before recording it', () => {
     await cluster.add({ WORKERS_ENABLED: 'true' });
     await waitFor(async () => (await pendingOutbox(db)) === 0, {
       timeoutMs: 30_000,
-      description: `the outbox to be published after the crash\n${cluster.output()}`,
+      description: () => `the outbox to be published after the crash\n${cluster.output()}`,
     });
 
     await expectEveryEventDelivered(db, queues);
@@ -189,7 +189,7 @@ describe('a process killed in the middle of the work', () => {
     );
     await waitFor(async () => (await inboxCount(db)) >= 20, {
       timeoutMs: 40_000,
-      description: `the consumers to start working\n${cluster.output()}`,
+      description: () => `the consumers to start working\n${cluster.output()}`,
     });
     const victim = cluster.instances[1] as Instance;
     await victim.kill();
@@ -209,12 +209,12 @@ describe('a process killed in the middle of the work', () => {
         (await queues.depth(queues.urls.transactions)) === 0,
       {
         timeoutMs: 90_000,
-        description: `the survivors to apply every message\n${cluster.output()}`,
+        description: () => `the survivors to apply every message\n${cluster.output()}`,
       },
     );
     await waitFor(async () => (await pendingOutbox(db)) === 0, {
       timeoutMs: 40_000,
-      description: `the survivors to publish the outbox\n${cluster.output()}`,
+      description: () => `the survivors to publish the outbox\n${cluster.output()}`,
     });
 
     expect(appliedAtKill).toBeLessThan(expectedMessages);
@@ -264,7 +264,7 @@ describe('restart', () => {
 
     await waitFor(async () => (await pendingOutbox(db)) === 0, {
       timeoutMs: 30_000,
-      description: `the outbox to be published after the restart\n${cluster.output()}`,
+      description: () => `the outbox to be published after the restart\n${cluster.output()}`,
     });
     await expectEveryEventDelivered(db, queues);
     for (const wallet of wallets) {
@@ -296,7 +296,7 @@ describe.skipIf(process.platform === 'win32')('graceful shutdown', () => {
     );
     await waitFor(async () => (await inboxCount(db)) >= 5, {
       timeoutMs: 40_000,
-      description: `the consumers to start working\n${cluster.output()}`,
+      description: () => `the consumers to start working\n${cluster.output()}`,
     });
     const direct = Array.from({ length: 30 }, () =>
       fetch(`${victim.url}/wagering/transactions`, {
@@ -311,10 +311,14 @@ describe.skipIf(process.platform === 'win32')('graceful shutdown', () => {
         () => 0,
       ),
     );
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const exit = await Promise.race([
       victim.terminate().then(() => 'exited'),
-      new Promise<string>((resolveTimeout) => setTimeout(() => resolveTimeout('timeout'), 25_000)),
+      new Promise<string>((resolveTimeout) => {
+        timer = setTimeout(() => resolveTimeout('timeout'), 25_000);
+      }),
     ]);
+    clearTimeout(timer);
     const statuses = await Promise.all(direct);
     await sending;
 
@@ -326,11 +330,14 @@ describe.skipIf(process.platform === 'win32')('graceful shutdown', () => {
       async () =>
         (await inboxCount(db)) === wallets.length * amounts.length &&
         (await queues.depth(queues.urls.transactions)) === 0,
-      { timeoutMs: 90_000, description: `the others to apply every message\n${cluster.output()}` },
+      {
+        timeoutMs: 90_000,
+        description: () => `the others to apply every message\n${cluster.output()}`,
+      },
     );
     await waitFor(async () => (await pendingOutbox(db)) === 0, {
       timeoutMs: 40_000,
-      description: `the outbox to be published\n${cluster.output()}`,
+      description: () => `the outbox to be published\n${cluster.output()}`,
     });
 
     for (const wallet of wallets) {
