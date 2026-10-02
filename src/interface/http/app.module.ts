@@ -12,6 +12,7 @@ import { buildCore, type Core } from '../../composition/core';
 import type { AppConfig } from '../../config/config';
 import { buildOrmConfig } from '../../infrastructure/persistence/orm.config';
 import { HealthController } from './controllers/health.controller';
+import { WageringController } from './controllers/wagering.controller';
 import { WalletsController } from './controllers/wallets.controller';
 import { APP_CONFIG, CORE } from './tokens';
 
@@ -30,7 +31,7 @@ class AppModule {}
 export function registerAppModule(config: AppConfig): DynamicModule {
   return {
     module: AppModule,
-    controllers: [HealthController, WalletsController],
+    controllers: [HealthController, WalletsController, WageringController],
     providers: [
       { provide: APP_CONFIG, useValue: config },
       {
