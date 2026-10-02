@@ -364,7 +364,7 @@ Limite honesto: os testes de três processos não distinguem `SKIP LOCKED` de um
 ## O que faria com mais tempo
 
 - Adaptador OIDC real (Keycloak) atrás da porta de identidade.
-- Teste de carga com relatório (throughput, p95/p99, conflitos de lock, lag da outbox).
+- Aumentar a vazão do publisher da outbox (o teste de carga em [docs/LOAD_TEST.md](docs/LOAD_TEST.md) mostrou acúmulo sob pico).
 - Rotina de retenção para inbox e outbox.
 - Orçamento de tentativas e fila de inspeção para transações `FAILED`.
 - Coleta central de métricas e alerta sobre `outbox_lag_seconds` e `reconciliation_divergences_total`.
