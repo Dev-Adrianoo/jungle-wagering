@@ -8,6 +8,7 @@ import type {
 } from '../../../src/application/use-cases/submit-wager-transaction';
 import type { WalletView } from '../../../src/application/views';
 import { buildCore, type Core } from '../../../src/composition/core';
+import { InboxMessage } from '../../../src/domain/messaging/inbox-message';
 import { createTestDatabase, type TestDatabase } from '../../support/database';
 import { expectLedgerMatchesBalance } from '../../support/invariants';
 import { rejectionOf } from '../../support/rejection';
@@ -172,5 +173,91 @@ describe('executeFromMessage', () => {
     expect(await debitsOf(wallet.id)).toHaveLength(1);
     expect(await inboxRows(inbox.messageId)).toHaveLength(1);
     await expectLedgerMatchesBalance(db, wallet.id);
+  });
+});
+
+describe('executeFromMessage with several messages in the inbox', () => {
+  test('a redelivery is still a duplicate after other messages were processed', async () => {
+    const wallet = await open('100.00');
+    const earlier = command(wallet, '1.00');
+    const later = command(wallet, '2.00');
+    const earlierInbox = envelope(undefined, 'c'.repeat(64));
+    const laterInbox = envelope(undefined, 'd'.repeat(64));
+    await core.submitWager.executeFromMessage(earlier, earlierInbox);
+    await core.submitWager.executeFromMessage(later, laterInbox);
+
+    const again = await core.submitWager.executeFromMessage(later, laterInbox);
+
+    expect(again).toEqual({ duplicate: true });
+    expect(await balanceOf(wallet.id)).toBe('97.00');
+    await expectLedgerMatchesBalance(db, wallet.id);
+  });
+
+  test('the same message id from another consumer is a different message', async () => {
+    const wallet = await open('100.00');
+    const request = command(wallet);
+    const inbox = envelope();
+    await core.submitWager.executeFromMessage(request, inbox);
+
+    const other = await core.submitWager.executeFromMessage(command(wallet), {
+      ...inbox,
+      consumerName: 'another-consumer',
+      payloadHash: 'e'.repeat(64),
+    });
+
+    expect(other).toMatchObject({ duplicate: false });
+    expect(
+      await db.query('select 1 from inbox_messages where message_id = ?', [inbox.messageId]),
+    ).toHaveLength(2);
+    await expectLedgerMatchesBalance(db, wallet.id);
+  });
+});
+
+describe('inbox repository', () => {
+  const receivedAt = new Date('2026-10-01T12:00:00.000Z');
+  const processedAt = new Date('2026-10-01T12:00:05.000Z');
+  const received = (messageId: string, payloadHash: string) =>
+    InboxMessage.receive({ messageId, consumerName: CONSUMER, payloadHash, receivedAt });
+
+  test('insertIfAbsent stores once and find returns every field', async () => {
+    const messageId = `msg-${randomUUID()}`;
+    const message = received(messageId, 'f'.repeat(64));
+    message.markProcessed(processedAt);
+
+    const first = await core.uow.run(() => core.inbox.insertIfAbsent(message));
+    const second = await core.uow.run(() => core.inbox.insertIfAbsent(message));
+    const found = await core.uow.run(() => core.inbox.find(CONSUMER, messageId));
+
+    expect([first, second]).toEqual([true, false]);
+    expect(found?.toState()).toEqual({
+      messageId,
+      consumerName: CONSUMER,
+      payloadHash: 'f'.repeat(64),
+      receivedAt,
+      processedAt,
+    });
+  });
+
+  test('a message that was received but not processed has no processedAt', async () => {
+    const messageId = `msg-${randomUUID()}`;
+
+    await core.uow.run(() => core.inbox.insertIfAbsent(received(messageId, '1'.repeat(64))));
+    const found = await core.uow.run(() => core.inbox.find(CONSUMER, messageId));
+
+    expect(found?.processedAt).toBeUndefined();
+  });
+
+  test('find is scoped to the consumer and the message id together', async () => {
+    const messageId = `msg-${randomUUID()}`;
+    await core.uow.run(() =>
+      core.inbox.insertIfAbsent(received(`msg-${randomUUID()}`, '3'.repeat(64))),
+    );
+    await core.uow.run(() => core.inbox.insertIfAbsent(received(messageId, '2'.repeat(64))));
+
+    const found = await core.uow.run(() => core.inbox.find(CONSUMER, messageId));
+    const unknown = await core.uow.run(() => core.inbox.find('nobody', messageId));
+
+    expect(found?.payloadHash).toBe('2'.repeat(64));
+    expect(unknown).toBeUndefined();
   });
 });

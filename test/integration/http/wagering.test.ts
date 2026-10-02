@@ -293,9 +293,11 @@ describe('ledger over HTTP', () => {
     }
 
     const amounts: string[] = [];
+    const pageSizes: number[] = [];
     let path = `/wallets/${wallet.id}/ledger?limit=2`;
     for (;;) {
       const page = await call(app, 'GET', path);
+      pageSizes.push(page.body.items.length);
       amounts.push(
         ...page.body.items.map((item: { money: { amount: string } }) => item.money.amount),
       );
@@ -303,6 +305,8 @@ describe('ledger over HTTP', () => {
       path = `/wallets/${wallet.id}/ledger?limit=2&cursor=${page.body.nextCursor}`;
     }
 
+    expect(pageSizes).toEqual([2, 2]);
     expect(amounts).toEqual(['100.00', '1.00', '2.00', '3.00']);
+    await expectLedgerMatchesBalance(db, wallet.id);
   });
 });

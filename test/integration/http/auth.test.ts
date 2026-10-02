@@ -11,6 +11,7 @@ import { PROVIDER_IDENTITY_PORT } from '../../../src/interface/http/tokens';
 import { createTestDatabase, type TestDatabase } from '../../support/database';
 import { as, FakeIdentityAdapter } from '../../support/fake-identity-adapter';
 import { call, startTestApp, type TestApp } from '../../support/http-app';
+import { expectLedgerMatchesBalance } from '../../support/invariants';
 
 let db: TestDatabase;
 let app: TestApp;
@@ -116,6 +117,60 @@ describe('roles', () => {
     expect(
       (await call(app, 'GET', `/wallets/${wallet.id}`, { headers: as('provider') })).status,
     ).toBe(403);
+  });
+});
+
+describe('role of each route', () => {
+  test('an operator cannot submit transactions', async () => {
+    const wallet = await openWallet();
+
+    const response = await submit(bet(wallet), as('operator'));
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('FORBIDDEN');
+    await expectLedgerMatchesBalance(db, wallet.id);
+  });
+
+  test('operators and auditors read a transaction by id, providers do not', async () => {
+    const wallet = await openWallet();
+    const submitted = await submit(bet(wallet), as('provider', 'provider-a'));
+    const path = `/wagering/transactions/${submitted.body.transactionId}`;
+
+    expect((await call(app, 'GET', path, { headers: as('operator') })).status).toBe(200);
+    expect((await call(app, 'GET', path, { headers: as('auditor') })).status).toBe(200);
+    expect((await call(app, 'GET', path, { headers: as('provider') })).status).toBe(403);
+    await expectLedgerMatchesBalance(db, wallet.id);
+  });
+
+  test('auditors look up a transaction by provider and external id', async () => {
+    const wallet = await openWallet();
+    const body = bet(wallet);
+    await submit(body, as('provider', 'provider-a'));
+
+    const response = await call(
+      app,
+      'GET',
+      `/providers/provider-a/wagering/transactions/${body.externalTransactionId}`,
+      { headers: as('auditor') },
+    );
+
+    expect(response.status).toBe(200);
+    await expectLedgerMatchesBalance(db, wallet.id);
+  });
+
+  test('a provider can neither page the ledger nor reconcile a wallet', async () => {
+    const wallet = await openWallet();
+
+    const ledger = await call(app, 'GET', `/wallets/${wallet.id}/ledger`, {
+      headers: as('provider'),
+    });
+    const reconciliation = await call(app, 'POST', `/wallets/${wallet.id}/reconciliation`, {
+      headers: as('provider'),
+    });
+
+    expect(ledger.status).toBe(403);
+    expect(reconciliation.status).toBe(403);
+    await expectLedgerMatchesBalance(db, wallet.id);
   });
 });
 
