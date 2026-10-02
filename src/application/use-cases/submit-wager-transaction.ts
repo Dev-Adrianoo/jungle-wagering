@@ -53,7 +53,7 @@ const KINDS: Record<SubmittableKind, WagerTransactionKind> = {
   ROLLBACK: WagerTransactionKind.Rollback,
 };
 
-const IDEMPOTENCY_CONSTRAINTS = new Set([
+export const IDEMPOTENCY_CONSTRAINTS = new Set([
   'wager_tx_idempotency_key_unique',
   'wager_tx_provider_external_unique',
 ]);

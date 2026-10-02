@@ -4,6 +4,8 @@
 // not here), 503 transient failure, 500 a bug on our side.
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException } from '@nestjs/common';
 import type { Response } from 'express';
+import { UniqueViolationError } from '../../application/errors';
+import { IDEMPOTENCY_CONSTRAINTS } from '../../application/use-cases/submit-wager-transaction';
 import { RequestValidationError, type ValidationIssue } from '../contracts/parse';
 import { type CorrelatedRequest, correlationIdOf } from './correlation';
 
@@ -118,6 +120,12 @@ export function toProblem(exception: unknown): ProblemDetails {
       CODE_BY_HTTP_STATUS[clientStatus] ?? 'HTTP_ERROR',
       TITLE_BY_STATUS[clientStatus] ?? 'Request failed',
     );
+  }
+  if (
+    exception instanceof UniqueViolationError &&
+    !IDEMPOTENCY_CONSTRAINTS.has(exception.constraint)
+  ) {
+    return INTERNAL;
   }
   const code = codeOf(exception);
   const status = code === undefined ? undefined : STATUS_BY_CODE[code];

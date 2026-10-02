@@ -51,7 +51,19 @@ describe('toProblem', () => {
     ],
     ['transient failure', new TransientInfrastructureError('down'), 503, 'SERVICE_UNAVAILABLE'],
     ['stale version', new StaleWalletVersionError('w'), 503, 'SERVICE_UNAVAILABLE'],
-    ['unresolved unique violation', new UniqueViolationError('c'), 503, 'SERVICE_UNAVAILABLE'],
+    [
+      'unresolved idempotency key violation',
+      new UniqueViolationError('wager_tx_idempotency_key_unique'),
+      503,
+      'SERVICE_UNAVAILABLE',
+    ],
+    [
+      'unresolved provider external id violation',
+      new UniqueViolationError('wager_tx_provider_external_unique'),
+      503,
+      'SERVICE_UNAVAILABLE',
+    ],
+    ['any other unique violation', new UniqueViolationError('c'), 500, 'INTERNAL_ERROR'],
     ['malformed body', new BadRequestException('bad json'), 400, 'VALIDATION_ERROR'],
     ['unknown route', new NotFoundException(), 404, 'NOT_FOUND'],
   ])('%s → %i %s', (_name, exception, status, code) => {
