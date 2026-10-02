@@ -9,16 +9,20 @@ import {
   type OnApplicationShutdown,
 } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import type { Logger } from '../../application/ports/logger';
 import type { ProviderIdentityPort } from '../../application/ports/provider-identity-port';
 import { buildCore, type Core } from '../../composition/core';
 import type { AppConfig } from '../../config/config';
 import { NoopIdentityAdapter } from '../../infrastructure/auth/noop-identity-adapter';
+import { PinoLogger } from '../../infrastructure/observability/pino-logger';
+import { PrometheusMetrics } from '../../infrastructure/observability/prometheus-metrics';
 import { buildOrmConfig } from '../../infrastructure/persistence/orm.config';
 import { AuthGuard } from './auth/auth.guard';
 import { HealthController } from './controllers/health.controller';
+import { MetricsController } from './controllers/metrics.controller';
 import { WageringController } from './controllers/wagering.controller';
 import { WalletsController } from './controllers/wallets.controller';
-import { APP_CONFIG, CORE, PROVIDER_IDENTITY_PORT } from './tokens';
+import { APP_CONFIG, CORE, LOGGER, METRICS, PROVIDER_IDENTITY_PORT } from './tokens';
 
 @Injectable()
 class OrmLifecycle implements OnApplicationShutdown {
@@ -34,23 +38,26 @@ class AppModule {}
 
 export interface AppOverrides {
   identityPort?: ProviderIdentityPort;
+  logger?: Logger;
 }
 
 export function registerAppModule(config: AppConfig, overrides: AppOverrides = {}): DynamicModule {
   return {
     module: AppModule,
-    controllers: [HealthController, WalletsController, WageringController],
+    controllers: [HealthController, WalletsController, WageringController, MetricsController],
     providers: [
       { provide: APP_CONFIG, useValue: config },
+      { provide: LOGGER, useValue: overrides.logger ?? new PinoLogger(config.logLevel) },
+      { provide: METRICS, useValue: new PrometheusMetrics() },
       {
         provide: MikroORM,
         useFactory: () => MikroORM.init(buildOrmConfig(config.databaseUrl)),
       },
       {
         provide: CORE,
-        inject: [MikroORM],
-        useFactory: (orm: MikroORM): Core =>
-          buildCore(orm, { lockTimeoutMs: config.lockTimeoutMs }),
+        inject: [MikroORM, LOGGER, METRICS],
+        useFactory: (orm: MikroORM, logger: Logger, metrics: PrometheusMetrics): Core =>
+          buildCore(orm, { lockTimeoutMs: config.lockTimeoutMs, logger, metrics }),
       },
       {
         provide: PROVIDER_IDENTITY_PORT,

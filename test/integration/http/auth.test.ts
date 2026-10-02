@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { Controller, Get, type INestApplication, Module } from '@nestjs/common';
 import { APP_GUARD, NestFactory } from '@nestjs/core';
+import { SilentLogger } from '../../../src/infrastructure/observability/silent-logger';
 import { AuthGuard } from '../../../src/interface/http/auth/auth.guard';
 import { ProblemDetailsFilter } from '../../../src/interface/http/problem-details.filter';
 import { PROVIDER_IDENTITY_PORT } from '../../../src/interface/http/tokens';
@@ -191,7 +192,7 @@ describe('deny by default', () => {
 
   beforeAll(async () => {
     bare = await NestFactory.create(UndecoratedModule, { logger: false });
-    bare.useGlobalFilters(new ProblemDetailsFilter());
+    bare.useGlobalFilters(new ProblemDetailsFilter(new SilentLogger()));
     await bare.listen(0, '127.0.0.1');
     baseUrl = `http://127.0.0.1:${(bare.getHttpServer().address() as AddressInfo).port}`;
   });

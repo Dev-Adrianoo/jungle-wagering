@@ -22,6 +22,8 @@ import {
 import type { Clock } from '../ports/clock';
 import type { IdGenerator } from '../ports/id-generator';
 import type { LedgerRepository } from '../ports/ledger-repository';
+import type { Logger } from '../ports/logger';
+import type { Metrics } from '../ports/metrics';
 import type { OutboxRepository } from '../ports/outbox-repository';
 import type { TransactionRepository } from '../ports/transaction-repository';
 import type { UnitOfWork } from '../ports/unit-of-work';
@@ -32,6 +34,7 @@ export interface SubmitWagerCommand {
   idempotencyKey: string;
   payload: WagerPayload;
   correlationId: string;
+  source: 'http' | 'sqs';
 }
 
 export interface SubmitWagerDependencies {
@@ -43,6 +46,8 @@ export interface SubmitWagerDependencies {
   processor: WagerProcessor;
   clock: Clock;
   ids: IdGenerator;
+  logger: Logger;
+  metrics: Metrics;
 }
 
 const KINDS: Record<SubmittableKind, WagerTransactionKind> = {
@@ -61,10 +66,26 @@ export const IDEMPOTENCY_CONSTRAINTS = new Set([
 export class SubmitWagerTransaction {
   constructor(private readonly deps: SubmitWagerDependencies) {}
 
+  async execute(command: SubmitWagerCommand): Promise<SubmitWagerResult> {
+    const startedAt = performance.now();
+    try {
+      const result = await this.submit(command);
+      this.record(command, result);
+      return result;
+    } catch (error) {
+      if (error instanceof IdempotencyKeyConflictError) {
+        this.deps.metrics.idempotencyConflict();
+      }
+      throw error;
+    } finally {
+      this.deps.metrics.processingObserved((performance.now() - startedAt) / 1000, command.source);
+    }
+  }
+
   // Two requests with the same key can both pass the lookup when they lock different
   // wallets. The unique constraint stops the second one; running it again makes it find
   // the first and answer with a replay or a conflict.
-  async execute(command: SubmitWagerCommand): Promise<SubmitWagerResult> {
+  private async submit(command: SubmitWagerCommand): Promise<SubmitWagerResult> {
     const payloadHash = hashWagerPayload(command.payload);
     try {
       return await this.attempt(command, payloadHash);
@@ -74,6 +95,26 @@ export class SubmitWagerTransaction {
       }
       throw error;
     }
+  }
+
+  private record(command: SubmitWagerCommand, result: SubmitWagerResult): void {
+    const { logger, metrics } = this.deps;
+    const fields = {
+      transactionId: result.transactionId,
+      walletId: command.payload.walletId,
+      providerId: command.payload.providerId,
+      status: result.status,
+      kind: command.payload.kind,
+      source: command.source,
+      failureCode: result.failureCode,
+    };
+    if (result.idempotentReplay) {
+      metrics.duplicateDetected(command.source);
+      logger.info('wager.replay', fields);
+      return;
+    }
+    metrics.transactionRecorded(result.status, command.payload.kind, command.source);
+    logger.info('wager.transaction', fields);
   }
 
   private attempt(command: SubmitWagerCommand, payloadHash: string): Promise<SubmitWagerResult> {

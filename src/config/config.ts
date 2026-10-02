@@ -5,6 +5,7 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   LOCK_TIMEOUT_MS: z.coerce.number().int().min(50).max(60000).default(3000),
   AUTH_MODE: z.enum(['noop']).default('noop'),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 });
 
 export interface AppConfig {
@@ -12,6 +13,7 @@ export interface AppConfig {
   databaseUrl: string;
   lockTimeoutMs: number;
   authMode: 'noop';
+  logLevel: 'debug' | 'info' | 'warn' | 'error' | 'silent';
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
@@ -27,5 +29,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     databaseUrl: parsed.data.DATABASE_URL,
     lockTimeoutMs: parsed.data.LOCK_TIMEOUT_MS,
     authMode: parsed.data.AUTH_MODE,
+    logLevel: parsed.data.LOG_LEVEL,
   };
 }

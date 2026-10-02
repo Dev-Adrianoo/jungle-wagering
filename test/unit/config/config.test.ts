@@ -8,6 +8,7 @@ describe('loadConfig', () => {
       databaseUrl: 'postgres://u:p@localhost:5440/db',
       lockTimeoutMs: 3000,
       authMode: 'noop',
+      logLevel: 'info',
     });
   });
 

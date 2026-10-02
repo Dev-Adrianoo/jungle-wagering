@@ -5,6 +5,7 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException } from '@nestjs/common';
 import type { Response } from 'express';
 import { UniqueViolationError } from '../../application/errors';
+import type { Logger } from '../../application/ports/logger';
 import { IDEMPOTENCY_CONSTRAINTS } from '../../application/use-cases/submit-wager-transaction';
 import { RequestValidationError, type ValidationIssue } from '../contracts/parse';
 import { type CorrelatedRequest, correlationIdOf } from './correlation';
@@ -144,6 +145,8 @@ export function toProblem(exception: unknown): ProblemDetails {
 
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
+  constructor(private readonly logger: Logger) {}
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     const response = http.getResponse<Response>();
@@ -152,8 +155,11 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
     if (body.status >= 500) {
       const name = exception instanceof Error ? exception.name : typeof exception;
-      const message = exception instanceof Error ? exception.message : String(exception);
-      console.error(JSON.stringify({ level: 'error', correlationId, error: name, message }));
+      this.logger.error('http.unhandled_error', {
+        correlationId,
+        error: name,
+        code: codeOf(exception),
+      });
     }
     if (body.status === 503) {
       response.setHeader('Retry-After', '1');

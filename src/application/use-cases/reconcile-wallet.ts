@@ -1,5 +1,7 @@
 import { WalletNotFoundError } from '../errors';
 import type { LedgerRepository } from '../ports/ledger-repository';
+import type { Logger } from '../ports/logger';
+import type { Metrics } from '../ports/metrics';
 import type { UnitOfWork } from '../ports/unit-of-work';
 import type { ReconciliationView } from '../views';
 
@@ -9,6 +11,8 @@ export class ReconcileWallet {
   constructor(
     private readonly uow: UnitOfWork,
     private readonly ledger: LedgerRepository,
+    private readonly logger: Logger,
+    private readonly metrics: Metrics,
   ) {}
 
   execute(walletId: string): Promise<ReconciliationView> {
@@ -18,7 +22,7 @@ export class ReconcileWallet {
         throw new WalletNotFoundError(walletId);
       }
       const difference = summary.storedBalance.subtract(summary.calculatedBalance);
-      return {
+      const view: ReconciliationView = {
         walletId,
         storedBalance: summary.storedBalance.toJSON(),
         calculatedBalance: summary.calculatedBalance.toJSON(),
@@ -26,6 +30,14 @@ export class ReconcileWallet {
         consistent: difference.isZero(),
         checkedEntries: summary.entries,
       };
+      if (!view.consistent) {
+        this.metrics.reconciliationDivergence();
+        this.logger.error('reconciliation.divergence', {
+          walletId,
+          checkedEntries: view.checkedEntries,
+        });
+      }
+      return view;
     });
   }
 }

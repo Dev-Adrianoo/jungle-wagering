@@ -52,7 +52,12 @@ export class WageringController {
   ): Promise<SubmitWagerResult> {
     const idempotencyKey = parseIdempotencyKey(idempotencyKeyHeader);
     const payload = parseWith(wagerPayloadSchema, body);
-    const result = await this.core.submitWager.execute({ idempotencyKey, payload, correlationId });
+    const result = await this.core.submitWager.execute({
+      idempotencyKey,
+      payload,
+      correlationId,
+      source: 'http',
+    });
     response.status(httpStatusFor(result));
     return result;
   }

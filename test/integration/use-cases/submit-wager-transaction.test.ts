@@ -49,6 +49,7 @@ function command(wallet: WalletView, overrides: Partial<WagerPayload> = {}): Sub
     idempotencyKey: `${payload.providerId}:${payload.externalTransactionId}`,
     payload,
     correlationId: 'corr-test',
+    source: 'http',
   };
 }
 

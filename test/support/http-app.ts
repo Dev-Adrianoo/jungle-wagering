@@ -20,7 +20,13 @@ export async function startTestApp(
   overrides: AppOverrides = {},
 ): Promise<TestApp> {
   const app = await createApp(
-    { port: 0, databaseUrl: db.databaseUrl, lockTimeoutMs: 3000, authMode: 'noop' },
+    {
+      port: 0,
+      databaseUrl: db.databaseUrl,
+      lockTimeoutMs: 3000,
+      authMode: 'noop',
+      logLevel: 'silent',
+    },
     overrides,
   );
   await app.listen(0, '127.0.0.1');

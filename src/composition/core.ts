@@ -4,6 +4,8 @@ import type { MikroORM } from '@mikro-orm/postgresql';
 import type { Clock } from '../application/ports/clock';
 import type { IdGenerator } from '../application/ports/id-generator';
 import type { LedgerRepository } from '../application/ports/ledger-repository';
+import type { Logger } from '../application/ports/logger';
+import type { Metrics } from '../application/ports/metrics';
 import type { OutboxRepository } from '../application/ports/outbox-repository';
 import type { TransactionRepository } from '../application/ports/transaction-repository';
 import type { UnitOfWork } from '../application/ports/unit-of-work';
@@ -15,6 +17,8 @@ import { ReconcileWallet } from '../application/use-cases/reconcile-wallet';
 import { SubmitWagerTransaction } from '../application/use-cases/submit-wager-transaction';
 import { defaultPolicies } from '../domain/wagering/policies/default-policies';
 import { WagerProcessor } from '../domain/wagering/wager-processor';
+import { NoopMetrics } from '../infrastructure/observability/noop-metrics';
+import { SilentLogger } from '../infrastructure/observability/silent-logger';
 import { MikroOrmUnitOfWork } from '../infrastructure/persistence/mikro-orm-unit-of-work';
 import { MikroOrmLedgerRepository } from '../infrastructure/persistence/repositories/ledger-repository';
 import { MikroOrmOutboxRepository } from '../infrastructure/persistence/repositories/outbox-repository';
@@ -28,6 +32,8 @@ export interface CoreOptions {
   clock?: Clock;
   ids?: IdGenerator;
   outbox?: OutboxRepository;
+  logger?: Logger;
+  metrics?: Metrics;
 }
 
 export interface Core {
@@ -38,6 +44,8 @@ export interface Core {
   transactions: TransactionRepository;
   ledger: LedgerRepository;
   outbox: OutboxRepository;
+  logger: Logger;
+  metrics: Metrics;
   openWallet: OpenWallet;
   walletQueries: WalletQueries;
   transactionQueries: TransactionQueries;
@@ -46,7 +54,9 @@ export interface Core {
 }
 
 export function buildCore(orm: MikroORM, options: CoreOptions): Core {
-  const uow = new MikroOrmUnitOfWork(orm, options.lockTimeoutMs);
+  const logger = options.logger ?? new SilentLogger();
+  const metrics = options.metrics ?? new NoopMetrics();
+  const uow = new MikroOrmUnitOfWork(orm, options.lockTimeoutMs, () => metrics.lockConflict());
   const clock = options.clock ?? new SystemClock();
   const ids = options.ids ?? new UuidV7IdGenerator();
   const wallets = new MikroOrmWalletRepository(uow);
@@ -62,10 +72,12 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
     transactions,
     ledger,
     outbox,
+    logger,
+    metrics,
     openWallet: new OpenWallet({ uow, wallets, transactions, ledger, outbox, clock, ids }),
     walletQueries: new WalletQueries(uow, wallets, ledger),
     transactionQueries: new TransactionQueries(uow, transactions),
-    reconcileWallet: new ReconcileWallet(uow, ledger),
+    reconcileWallet: new ReconcileWallet(uow, ledger, logger, metrics),
     submitWager: new SubmitWagerTransaction({
       uow,
       wallets,
@@ -75,6 +87,8 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
       processor,
       clock,
       ids,
+      logger,
+      metrics,
     }),
   };
 }
