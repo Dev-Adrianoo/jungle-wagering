@@ -33,6 +33,11 @@ export class Migration20261001000002_wager_transactions extends Migration {
           CHECK (kind IN ('OPENING', 'BET', 'WIN', 'LOSS', 'REFUND', 'ROLLBACK')),
         CONSTRAINT wager_tx_status_valid
           CHECK (status IN ('PENDING', 'PENDING_REFERENCE', 'PROCESSED', 'REJECTED', 'FAILED')),
+        CONSTRAINT wager_tx_amounts_are_numbers
+          CHECK (amount <> 'NaN' AND observed_balance <> 'NaN'),
+        CONSTRAINT wager_tx_processed_reversal_resolved
+          CHECK (kind NOT IN ('REFUND', 'ROLLBACK') OR status <> 'PROCESSED'
+            OR reference_transaction_id IS NOT NULL),
         CONSTRAINT wager_tx_amount_non_negative CHECK (amount >= 0),
         CONSTRAINT wager_tx_amount_positive_unless_loss CHECK (kind = 'LOSS' OR amount > 0),
         CONSTRAINT wager_tx_observed_balance_non_negative CHECK (observed_balance >= 0),

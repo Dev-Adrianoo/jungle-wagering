@@ -8,7 +8,7 @@ import {
   WalletSchema,
 } from './records';
 
-export function buildOrmConfig(databaseUrl: string) {
+export function buildOrmConfig(databaseUrl: string, options: { silentMigrations?: boolean } = {}) {
   return defineConfig({
     clientUrl: databaseUrl,
     entities: [WalletSchema, WagerTransactionSchema, LedgerEntrySchema, OutboxMessageSchema],
@@ -22,6 +22,7 @@ export function buildOrmConfig(databaseUrl: string) {
       allOrNothing: true,
       disableForeignKeys: false,
       snapshot: false,
+      silent: options.silentMigrations ?? false,
     },
   });
 }

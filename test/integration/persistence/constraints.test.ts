@@ -161,6 +161,10 @@ describe('wallets', () => {
     await expectAccepted(insertWallet({ player_id: wallet.player_id, currency: 'USD' }));
   });
 
+  test('refuses a NaN balance', async () => {
+    await expectRejection(insertWallet({ balance: 'NaN' }), /wallets_balance_is_a_number/);
+  });
+
   test('refuses a version below 1', async () => {
     await expectRejection(insertWallet({ version: 0 }), /wallets_version_positive/);
   });
@@ -197,7 +201,18 @@ describe('wager_transactions', () => {
     ['a zero BET', { amount: '0.00' }, /wager_tx_amount_positive_unless_loss/],
     ['a negative amount', { kind: 'LOSS', amount: '-1.00' }, /wager_tx_amount_non_negative/],
     ['a BET without round', { round_id: null }, /wager_tx_round_game_required/],
-    ['a REFUND without reference', { kind: 'REFUND' }, /wager_tx_reference_required/],
+    [
+      'a REFUND without reference',
+      { kind: 'REFUND', status: 'REJECTED', failure_code: 'X', processed_at: null },
+      /wager_tx_reference_required/,
+    ],
+    [
+      'a PROCESSED REFUND without a resolved reference',
+      { kind: 'REFUND', reference_external_transaction_id: 'ext-x' },
+      /wager_tx_processed_reversal_resolved/,
+    ],
+    ['a NaN amount', { amount: 'NaN' }, /wager_tx_amounts_are_numbers/],
+    ['a NaN observed balance', { observed_balance: 'NaN' }, /wager_tx_amounts_are_numbers/],
     [
       'a REJECTED row without failure code',
       { status: 'REJECTED', processed_at: null },
@@ -307,6 +322,9 @@ describe('wallet_ledger_entries', () => {
       /ledger_arithmetic/,
     ],
     ['a zero amount', { amount: '0.00', balance_after: '100.00' }, /ledger_amount_positive/],
+    ['a NaN amount', { amount: 'NaN', balance_after: 'NaN' }, /ledger_amounts_are_numbers/],
+    ['a NaN balance before', { balance_before: 'NaN' }, /ledger_amounts_are_numbers/],
+    ['a NaN balance after', { balance_after: 'NaN' }, /ledger_amounts_are_numbers/],
     ['an unknown direction', { direction: 'TRANSFER' }, /ledger_direction_valid/],
     [
       'a negative balance after',

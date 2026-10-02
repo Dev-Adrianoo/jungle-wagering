@@ -1,3 +1,6 @@
+// PostgreSQL evaluates CHECK constraints in name order, and ledger_arithmetic sorts before
+// ledger_direction_valid. The last branch of ledger_arithmetic lets an unknown direction fall
+// through so ledger_direction_valid is the constraint that reports it.
 import { Migration } from '@mikro-orm/migrations';
 
 export class Migration20261001000003_wallet_ledger_entries extends Migration {
@@ -19,6 +22,8 @@ export class Migration20261001000003_wallet_ledger_entries extends Migration {
         CONSTRAINT ledger_wallet_transaction_unique UNIQUE (wallet_id, transaction_id),
         CONSTRAINT ledger_wallet_version_unique UNIQUE (wallet_id, wallet_version),
         CONSTRAINT ledger_direction_valid CHECK (direction IN ('DEBIT', 'CREDIT')),
+        CONSTRAINT ledger_amounts_are_numbers
+          CHECK (amount <> 'NaN' AND balance_before <> 'NaN' AND balance_after <> 'NaN'),
         CONSTRAINT ledger_amount_positive CHECK (amount > 0),
         CONSTRAINT ledger_wallet_version_positive CHECK (wallet_version >= 1),
         CONSTRAINT ledger_balance_before_non_negative CHECK (balance_before >= 0),

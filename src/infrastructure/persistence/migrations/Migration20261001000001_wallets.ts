@@ -13,6 +13,7 @@ export class Migration20261001000001_wallets extends Migration {
         updated_at timestamptz NOT NULL,
         CONSTRAINT wallets_player_currency_unique UNIQUE (player_id, currency),
         CONSTRAINT wallets_balance_non_negative CHECK (balance >= 0),
+        CONSTRAINT wallets_balance_is_a_number CHECK (balance <> 'NaN'),
         CONSTRAINT wallets_version_positive CHECK (version >= 1),
         CONSTRAINT wallets_currency_format CHECK (currency ~ '^[A-Z]{3}$')
       )

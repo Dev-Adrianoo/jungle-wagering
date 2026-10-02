@@ -13,7 +13,7 @@ export interface TestDatabase {
 }
 
 async function withAdmin(run: (admin: MikroORM) => Promise<void>): Promise<void> {
-  const admin = await MikroORM.init(buildOrmConfig(BASE_URL));
+  const admin = await MikroORM.init(buildOrmConfig(BASE_URL, { silentMigrations: true }));
   try {
     await run(admin);
   } finally {
@@ -31,7 +31,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   url.pathname = `/${name}`;
   const databaseUrl = url.toString();
 
-  const orm = await MikroORM.init(buildOrmConfig(databaseUrl));
+  const orm = await MikroORM.init(buildOrmConfig(databaseUrl, { silentMigrations: true }));
   await orm.getMigrator().up();
 
   return {
