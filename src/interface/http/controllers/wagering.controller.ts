@@ -5,13 +5,14 @@ import type { SubmitWagerResult, TransactionView } from '../../../application/vi
 import type { Core } from '../../../composition/core';
 import { WagerTransactionStatus } from '../../../domain/wagering/wager-transaction';
 import { parseWith } from '../../contracts/parse';
+import { uuidSchema } from '../../contracts/uuid.schema';
 import { parseIdempotencyKey, wagerPayloadSchema } from '../../contracts/wager-payload.schema';
 import { Roles } from '../auth/decorators';
 import { CorrelationId } from '../correlation';
 import { CORE } from '../tokens';
 
 const transactionParamsSchema = z.object({
-  transactionId: z.uuid().transform((value) => value.toLowerCase()),
+  transactionId: uuidSchema,
 });
 
 const providerTransactionParamsSchema = z.object({
@@ -20,16 +21,20 @@ const providerTransactionParamsSchema = z.object({
 });
 
 // 201 applied now, 200 replay of an applied transaction, 202 accepted but waiting for its
-// reference, 422 refused by a business rule (also on replay). The provider can tell these
-// apart by status alone.
+// reference, 422 refused by a business rule (also on replay), 500 permanent infrastructure
+// failure (FAILED). The provider can tell these apart by status alone.
 export function httpStatusFor(result: SubmitWagerResult): number {
   switch (result.status) {
     case WagerTransactionStatus.Processed:
       return result.idempotentReplay ? 200 : 201;
     case WagerTransactionStatus.PendingReference:
       return 202;
-    default:
+    case WagerTransactionStatus.Rejected:
       return 422;
+    case WagerTransactionStatus.Failed:
+      return 500;
+    case WagerTransactionStatus.Pending:
+      throw new Error(`transaction ${result.transactionId} left the use case still PENDING`);
   }
 }
 

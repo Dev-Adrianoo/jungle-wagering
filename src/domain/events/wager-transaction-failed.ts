@@ -1,4 +1,5 @@
 import type { MoneyProps } from '../money/money';
+import type { FailureCode } from '../wagering/failure-code';
 import {
   InvalidTransactionStateError,
   type WagerTransaction,
@@ -7,7 +8,7 @@ import {
 } from '../wagering/wager-transaction';
 import { type EventContext, IntegrationEvent } from './integration-event';
 
-export interface WagerTransactionProcessedData {
+export interface WagerTransactionFailedData {
   transactionId: string;
   providerId: string;
   externalTransactionId: string;
@@ -18,21 +19,20 @@ export interface WagerTransactionProcessedData {
   kind: WagerTransactionKind;
   money: MoneyProps;
   balance: MoneyProps;
-  referenceTransactionId?: string;
-  processedAt: string;
+  failureCode: FailureCode;
 }
 
-export class WagerTransactionProcessed extends IntegrationEvent<WagerTransactionProcessedData> {
-  readonly eventType = 'WagerTransactionProcessed';
+export class WagerTransactionFailed extends IntegrationEvent<WagerTransactionFailedData> {
+  readonly eventType = 'WagerTransactionFailed';
   readonly version = 1;
 
-  static from(transaction: WagerTransaction, context: EventContext): WagerTransactionProcessed {
-    if (transaction.status !== WagerTransactionStatus.Processed || !transaction.processedAt) {
+  static from(transaction: WagerTransaction, context: EventContext): WagerTransactionFailed {
+    if (transaction.status !== WagerTransactionStatus.Failed || !transaction.failureCode) {
       throw new InvalidTransactionStateError(
-        `transaction ${transaction.id} is ${transaction.status}, not PROCESSED`,
+        `transaction ${transaction.id} is ${transaction.status}, not FAILED`,
       );
     }
-    return new WagerTransactionProcessed({
+    return new WagerTransactionFailed({
       ...context,
       aggregateId: transaction.walletId,
       data: {
@@ -46,10 +46,7 @@ export class WagerTransactionProcessed extends IntegrationEvent<WagerTransaction
         kind: transaction.kind,
         money: transaction.money.toJSON(),
         balance: transaction.observedBalance.toJSON(),
-        ...(transaction.referenceTransactionId === undefined
-          ? {}
-          : { referenceTransactionId: transaction.referenceTransactionId }),
-        processedAt: transaction.processedAt.toISOString(),
+        failureCode: transaction.failureCode,
       },
     });
   }

@@ -1,11 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import type { EventContext } from '../../../src/domain/events/integration-event';
+import { WagerTransactionFailed } from '../../../src/domain/events/wager-transaction-failed';
 import { WagerTransactionPendingReference } from '../../../src/domain/events/wager-transaction-pending-reference';
 import { WagerTransactionProcessed } from '../../../src/domain/events/wager-transaction-processed';
 import { WagerTransactionRejected } from '../../../src/domain/events/wager-transaction-rejected';
 import { WalletBalanceChanged } from '../../../src/domain/events/wallet-balance-changed';
 import { FailureCode } from '../../../src/domain/wagering/failure-code';
-import { WagerTransactionKind as Kind } from '../../../src/domain/wagering/wager-transaction';
+import {
+  InvalidTransactionStateError,
+  WagerTransactionKind as Kind,
+} from '../../../src/domain/wagering/wager-transaction';
 import { LedgerDirection } from '../../../src/domain/wallet/wallet-ledger-entry';
 import { AT, aTransaction, aWallet, brl, WALLET_ID } from '../../support/builders';
 
@@ -113,5 +117,35 @@ describe('WagerTransactionPendingReference', () => {
     expect(json.eventType).toBe('WagerTransactionPendingReference');
     expect(json.data.referenceExternalTransactionId).toBe('ext-bet');
     expect(json.data.nextAttemptAt).toBe('2026-10-01T12:00:05.000Z');
+  });
+});
+
+describe('WagerTransactionFailed', () => {
+  test('carries the failure code and the wallet as aggregate', () => {
+    const tx = aTransaction();
+    tx.fail(FailureCode.InternalError, brl('20.00'), AT);
+
+    const json = WagerTransactionFailed.from(tx, context).toJSON();
+
+    expect(json.eventType).toBe('WagerTransactionFailed');
+    expect(json.version).toBe(1);
+    expect(json.aggregateId).toBe(WALLET_ID);
+    expect(json.data.failureCode).toBe(FailureCode.InternalError);
+    expect(json.data.transactionId).toBe('tx-1');
+  });
+
+  test('refuses a transaction that did not fail', () => {
+    expect(() => WagerTransactionFailed.from(aTransaction(), context)).toThrow(
+      InvalidTransactionStateError,
+    );
+  });
+});
+
+describe('WagerTransactionProcessed guards', () => {
+  test('refuses a transaction that is not PROCESSED', () => {
+    const tx = aTransaction();
+    tx.reject(FailureCode.InsufficientFunds, brl('20.00'), AT);
+
+    expect(() => WagerTransactionProcessed.from(tx, context)).toThrow(InvalidTransactionStateError);
   });
 });

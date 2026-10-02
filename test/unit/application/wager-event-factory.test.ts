@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { eventsFor } from '../../../src/application/events/wager-event-factory';
 import type { EventContext } from '../../../src/domain/events/integration-event';
 import { FailureCode } from '../../../src/domain/wagering/failure-code';
-import { WagerTransactionKind as Kind } from '../../../src/domain/wagering/wager-transaction';
+import {
+  InvalidTransactionStateError,
+  WagerTransactionKind as Kind,
+} from '../../../src/domain/wagering/wager-transaction';
 import { AT, aTransaction, aWallet } from '../../support/builders';
 
 let counter = 0;
@@ -59,5 +62,21 @@ describe('eventsFor', () => {
     expect(typesOf(eventsFor(tx, wallet, undefined, newContext))).toEqual([
       'WagerTransactionPendingReference',
     ]);
+  });
+
+  test('a FAILED transaction emits only WagerTransactionFailed', () => {
+    const wallet = aWallet('10.00');
+    const tx = aTransaction();
+    tx.fail(FailureCode.InternalError, wallet.balance, AT);
+
+    expect(typesOf(eventsFor(tx, wallet, undefined, newContext))).toEqual([
+      'WagerTransactionFailed',
+    ]);
+  });
+
+  test('a PENDING transaction is a programming error, not a silent no-op', () => {
+    expect(() => eventsFor(aTransaction(), aWallet('10.00'), undefined, newContext)).toThrow(
+      InvalidTransactionStateError,
+    );
   });
 });

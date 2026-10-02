@@ -33,6 +33,11 @@ export class WagerProcessor {
         `cannot process terminal transaction ${transaction.id} with status ${transaction.status}`,
       );
     }
+    if (transaction.walletId !== wallet.id) {
+      throw new InvalidWagerTransactionError(
+        `transaction ${transaction.id} belongs to wallet ${transaction.walletId}, not ${wallet.id}`,
+      );
+    }
     const policy = this.policies.get(transaction.kind);
     if (!policy) {
       throw new InvalidWagerTransactionError(`no policy registered for ${transaction.kind}`);
