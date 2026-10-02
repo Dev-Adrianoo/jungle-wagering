@@ -51,6 +51,8 @@ const TITLE_BY_STATUS: Record<number, string> = {
   403: 'Forbidden',
   404: 'Not found',
   409: 'Conflict',
+  413: 'Payload too large',
+  415: 'Unsupported media type',
   500: 'Internal error',
   503: 'Service temporarily unavailable',
 };
@@ -78,6 +80,25 @@ function codeOf(exception: unknown): string | undefined {
   return typeof code === 'string' ? code : undefined;
 }
 
+// Express's body parser raises plain http-errors (413, 415, ...) that are not HttpException.
+function clientErrorStatusOf(exception: unknown): number | undefined {
+  if (!(exception instanceof Error)) {
+    return undefined;
+  }
+  const { status, statusCode } = exception as { status?: unknown; statusCode?: unknown };
+  for (const candidate of [status, statusCode]) {
+    if (
+      typeof candidate === 'number' &&
+      Number.isInteger(candidate) &&
+      candidate >= 400 &&
+      candidate <= 499
+    ) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 export function toProblem(exception: unknown): ProblemDetails {
   if (exception instanceof RequestValidationError) {
     return problem(400, exception.code, exception.message, exception.issues);
@@ -88,6 +109,14 @@ export function toProblem(exception: unknown): ProblemDetails {
       status,
       CODE_BY_HTTP_STATUS[status] ?? 'HTTP_ERROR',
       TITLE_BY_STATUS[status] ?? 'Request failed',
+    );
+  }
+  const clientStatus = clientErrorStatusOf(exception);
+  if (clientStatus !== undefined) {
+    return problem(
+      clientStatus,
+      CODE_BY_HTTP_STATUS[clientStatus] ?? 'HTTP_ERROR',
+      TITLE_BY_STATUS[clientStatus] ?? 'Request failed',
     );
   }
   const code = codeOf(exception);

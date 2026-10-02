@@ -53,6 +53,19 @@ describe('correlation id', () => {
 });
 
 describe('errors', () => {
+  test('a body over the size limit answers 413 as problem+json', async () => {
+    const rawBody = JSON.stringify({ padding: 'x'.repeat(150 * 1024) });
+    const response = await call(app, 'POST', '/wallets', {
+      rawBody,
+      headers: { 'x-correlation-id': 'trace-413' },
+    });
+
+    expect(response.status).toBe(413);
+    expect(response.headers.get('content-type')).toContain('application/problem+json');
+    expect(response.body.code).toBe('PAYLOAD_TOO_LARGE');
+    expect(response.body.correlationId).toBe('trace-413');
+  });
+
   test('an unknown route answers 404 as problem+json with the correlation id', async () => {
     const response = await call(app, 'GET', '/nope', {
       headers: { 'x-correlation-id': 'trace-404' },

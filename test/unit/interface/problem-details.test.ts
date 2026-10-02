@@ -67,6 +67,27 @@ describe('toProblem', () => {
   });
 
   test.each([
+    [413, 'PAYLOAD_TOO_LARGE', 'request entity too large', 'entity.too.large'],
+    [415, 'UNSUPPORTED_MEDIA_TYPE', 'unsupported charset', 'charset.unsupported'],
+    [418, 'HTTP_ERROR', 'teapot', 'other'],
+  ])(
+    'a client error with status %i from the body parser becomes %s',
+    (status, code, message, type) => {
+      const problem = toProblem(
+        Object.assign(new Error(message), { status, statusCode: status, type }),
+      );
+
+      expect(problem.status).toBe(status);
+      expect(problem.code).toBe(code);
+      expect(problem.detail).not.toContain(message);
+    },
+  );
+
+  test.each([500, 302])('an error with status %i is still a generic 500', (status) => {
+    expect(toProblem(Object.assign(new Error('x'), { status })).status).toBe(500);
+  });
+
+  test.each([
     ['a programming error in the domain', new InvalidTransactionStateError('terminal')],
     ['an unknown error', new Error('pg: connection string is postgres://user:secret@host')],
     ['a driver error with its own code', Object.assign(new Error('boom'), { code: '23503' })],
