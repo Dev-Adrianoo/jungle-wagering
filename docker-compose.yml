@@ -1,3 +1,25 @@
+# Bring the application stack up without touching running postgres/localstack:
+#   docker compose up -d --build --wait --no-recreate setup app-1 app-2 app-3 nginx
+# The host port of the load balancer is APP_PORT (default 3000).
+# stop_grace_period must exceed the SQS long poll (SQS_WAIT_TIME_SECONDS) plus the tick in flight.
+x-app: &app
+  build: .
+  environment: &app-environment
+    PORT: "3000"
+    DATABASE_URL: postgres://wagering:wagering@postgres:5432/wagering
+    SQS_ENDPOINT: http://localstack:4566
+    AWS_REGION: us-east-1
+    LOG_LEVEL: info
+  stop_grace_period: 30s
+  depends_on:
+    setup:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD", "bun", "-e", "const r = await fetch('http://localhost:3000/health/ready'); process.exit(r.ok ? 0 : 1)"]
+    interval: 3s
+    timeout: 3s
+    retries: 20
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -27,6 +49,38 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  setup:
+    build: .
+    command: ["bun", "run", "src/setup.ts"]
+    environment: *app-environment
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  app-1:
+    <<: *app
+  app-2:
+    <<: *app
+  app-3:
+    <<: *app
+
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${APP_PORT:-3000}:80"
+    depends_on:
+      app-1:
+        condition: service_healthy
+      app-2:
+        condition: service_healthy
+      app-3:
+        condition: service_healthy
 
 volumes:
   postgres-data:
