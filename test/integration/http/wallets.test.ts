@@ -42,6 +42,20 @@ describe('POST /wallets', () => {
     await expectLedgerMatchesBalance(db, response.body.id);
   });
 
+  test('stores the caller correlation id on the opening transaction', async () => {
+    const response = await call(app, 'POST', '/wallets', {
+      body: openBody(),
+      headers: { 'x-correlation-id': 'trace-open' },
+    });
+
+    const rows = await db.query<{ correlation_id: string }>(
+      'select correlation_id from wager_transactions where wallet_id = ?',
+      [response.body.id],
+    );
+    expect(rows.map((row) => row.correlation_id)).toEqual(['trace-open']);
+    await expectLedgerMatchesBalance(db, response.body.id);
+  });
+
   test('a second wallet for the same player and currency is 409', async () => {
     const body = openBody();
     await call(app, 'POST', '/wallets', { body });

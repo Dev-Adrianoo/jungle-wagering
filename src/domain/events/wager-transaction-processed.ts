@@ -1,5 +1,10 @@
 import type { MoneyProps } from '../money/money';
-import type { WagerTransaction, WagerTransactionKind } from '../wagering/wager-transaction';
+import {
+  InvalidTransactionStateError,
+  type WagerTransaction,
+  type WagerTransactionKind,
+  WagerTransactionStatus,
+} from '../wagering/wager-transaction';
 import { type EventContext, IntegrationEvent } from './integration-event';
 
 export interface WagerTransactionProcessedData {
@@ -22,6 +27,11 @@ export class WagerTransactionProcessed extends IntegrationEvent<WagerTransaction
   readonly version = 1;
 
   static from(transaction: WagerTransaction, context: EventContext): WagerTransactionProcessed {
+    if (transaction.status !== WagerTransactionStatus.Processed || !transaction.processedAt) {
+      throw new InvalidTransactionStateError(
+        `transaction ${transaction.id} is ${transaction.status}, not PROCESSED`,
+      );
+    }
     return new WagerTransactionProcessed({
       ...context,
       aggregateId: transaction.walletId,
@@ -39,7 +49,7 @@ export class WagerTransactionProcessed extends IntegrationEvent<WagerTransaction
         ...(transaction.referenceTransactionId === undefined
           ? {}
           : { referenceTransactionId: transaction.referenceTransactionId }),
-        processedAt: (transaction.processedAt ?? context.occurredAt).toISOString(),
+        processedAt: transaction.processedAt.toISOString(),
       },
     });
   }

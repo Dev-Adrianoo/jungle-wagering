@@ -47,6 +47,7 @@ function bet(wallet: WalletView, amount: string): SubmitWagerCommand {
     idempotencyKey: `${payload.providerId}:${payload.externalTransactionId}`,
     payload,
     correlationId: 'corr-test',
+    source: 'http',
   };
 }
 

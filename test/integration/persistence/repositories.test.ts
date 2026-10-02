@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import {
+  StaleTransactionError,
   StaleWalletVersionError,
   TransientInfrastructureError,
   UniqueViolationError,
@@ -209,6 +210,17 @@ describe('transaction repository', () => {
     const loaded = await core.uow.read(() => core.transactions.findById(tx.id));
 
     expect(loaded?.toState()).toEqual(tx.toState());
+  });
+
+  test('update refuses a transaction that is no longer waiting for its reference', async () => {
+    const wallet = await persistedWallet();
+    const tx = newTransaction(wallet);
+    tx.markProcessed(undefined, brl('75.00'), new Date());
+    await core.uow.run(() => core.transactions.insert(tx));
+
+    const error = await rejectionOf(core.uow.run(() => core.transactions.update(tx)));
+
+    expect(error).toBeInstanceOf(StaleTransactionError);
   });
 
   test('isReversed is true only after a PROCESSED reversal', async () => {

@@ -3,9 +3,11 @@ import type { AddressInfo } from 'node:net';
 import type { AppOverrides } from '../../src/interface/http/app.module';
 import { createApp } from '../../src/interface/http/create-app';
 import type { TestDatabase } from './database';
+import { createTestQueues, type TestQueues } from './sqs';
 
 export interface TestApp {
   baseUrl: string;
+  queues: TestQueues;
   close(): Promise<void>;
 }
 
@@ -18,14 +20,35 @@ export interface CallOptions {
 export async function startTestApp(
   db: TestDatabase,
   overrides: AppOverrides = {},
+  options: { queues?: TestQueues; workers?: boolean } = {},
 ): Promise<TestApp> {
+  const ownedQueues = options.queues ?? (await createTestQueues());
   const app = await createApp(
-    { port: 0, databaseUrl: db.databaseUrl, lockTimeoutMs: 3000, authMode: 'noop' },
+    {
+      port: 0,
+      databaseUrl: db.databaseUrl,
+      lockTimeoutMs: 3000,
+      authMode: 'noop',
+      logLevel: 'silent',
+      workersEnabled: options.workers ?? false,
+      sqsWaitTimeSeconds: 1,
+      crashAt: undefined,
+      sqs: ownedQueues.config,
+    },
     overrides,
   );
   await app.listen(0, '127.0.0.1');
   const { port } = app.getHttpServer().address() as AddressInfo;
-  return { baseUrl: `http://127.0.0.1:${port}`, close: () => app.close() };
+  return {
+    baseUrl: `http://127.0.0.1:${port}`,
+    queues: ownedQueues,
+    close: async () => {
+      await app.close();
+      if (options.queues === undefined) {
+        await ownedQueues.destroy();
+      }
+    },
+  };
 }
 
 export async function call(app: TestApp, method: string, path: string, options: CallOptions = {}) {

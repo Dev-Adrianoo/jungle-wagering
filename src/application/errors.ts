@@ -49,6 +49,22 @@ export class DuplicateExternalTransactionError extends ApplicationError {
   }
 }
 
+export class StaleTransactionError extends ApplicationError {
+  readonly code = 'STALE_TRANSACTION';
+
+  constructor(transactionId: string) {
+    super(`transaction ${transactionId} is no longer waiting for its reference`);
+  }
+}
+
+export class MessageIdReusedError extends ApplicationError {
+  readonly code = 'MESSAGE_ID_REUSED';
+
+  constructor(messageId: string) {
+    super(`message ${messageId} was already received with a different payload`);
+  }
+}
+
 export class InvalidCursorError extends ApplicationError {
   readonly code = 'VALIDATION_ERROR';
 

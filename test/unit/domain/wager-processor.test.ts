@@ -265,6 +265,15 @@ describe('ROLLBACK', () => {
 });
 
 describe('checks shared by every kind', () => {
+  test('a transaction for another wallet is a programming error and changes nothing', () => {
+    const wallet = aWallet('100.00');
+    const tx = aTransaction({ walletId: 'another-wallet' });
+
+    expect(() => run(tx, wallet)).toThrow(InvalidWagerTransactionError);
+    expect(wallet.version).toBe(1);
+    expect(tx.status).toBe(Status.Pending);
+  });
+
   test('a currency different from the wallet is REJECTED with CURRENCY_MISMATCH', () => {
     const wallet = aWallet('100.00');
     const tx = aTransaction({ money: usd('10.00') });

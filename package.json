@@ -12,10 +12,14 @@
     "test": "bun test ./test/unit",
     "test:integration": "bun test ./test/integration --timeout 30000",
     "test:regression": "bun test ./test/regression --timeout 30000",
+    "test:concurrency": "bun test ./test/concurrency --timeout 120000",
+    "test:all": "bun run test && bun run test:integration && bun run test:regression && bun run test:concurrency",
+    "setup": "bun run src/setup.ts",
     "db:migrate": "bun run src/infrastructure/persistence/migrate.ts up",
     "db:rollback": "bun run src/infrastructure/persistence/migrate.ts down"
   },
   "dependencies": {
+    "@aws-sdk/client-sqs": "3.1145.0",
     "@mikro-orm/core": "6.6.16",
     "@mikro-orm/migrations": "6.6.16",
     "@mikro-orm/postgresql": "6.6.16",
@@ -23,6 +27,8 @@
     "@nestjs/core": "11.2.7",
     "@nestjs/platform-express": "11.2.7",
     "decimal.js": "10.6.0",
+    "pino": "10.3.1",
+    "prom-client": "15.1.3",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "zod": "4.6.5"

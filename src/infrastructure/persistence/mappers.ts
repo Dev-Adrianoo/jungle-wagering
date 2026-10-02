@@ -1,4 +1,4 @@
-import type { OutboxMessage } from '../../domain/messaging/outbox-message';
+import { OutboxMessage } from '../../domain/messaging/outbox-message';
 import { Money } from '../../domain/money/money';
 import type { FailureCode } from '../../domain/wagering/failure-code';
 import {
@@ -152,4 +152,17 @@ export function toOutboxRecord(message: OutboxMessage): OutboxMessageRecord {
     nextAttemptAt: state.nextAttemptAt ?? null,
     publishedAt: state.publishedAt ?? null,
   };
+}
+
+export function toOutboxMessage(record: OutboxMessageRecord): OutboxMessage {
+  return OutboxMessage.rehydrate({
+    id: record.id,
+    aggregateId: record.aggregateId,
+    eventType: record.eventType,
+    payload: record.payload,
+    occurredAt: record.occurredAt,
+    attempts: record.attempts,
+    nextAttemptAt: record.nextAttemptAt ?? undefined,
+    publishedAt: record.publishedAt ?? undefined,
+  });
 }

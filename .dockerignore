@@ -1,0 +1,13 @@
+.git
+.github
+.claude
+.superpowers
+docs
+CLAUDE.md
+node_modules
+test
+coverage
+dist
+.env
+.env.*
+*.log

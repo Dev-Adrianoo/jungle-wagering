@@ -5,9 +5,9 @@ import { z } from 'zod';
 import { INTERNAL_PROVIDER_ID } from '../../domain/wagering/wager-transaction';
 import { nonNegativeMoneySchema } from './money.schema';
 import { parseWith } from './parse';
+import { uuidSchema } from './uuid.schema';
 
 const text = (max: number) => z.string().min(1).max(max);
-const uuid = z.uuid().transform((value) => value.toLowerCase());
 const ZERO = /^0(\.0{1,2})?$/;
 
 export const wagerPayloadSchema = z
@@ -16,8 +16,8 @@ export const wagerPayloadSchema = z
       message: 'is reserved for internal transactions',
     }),
     externalTransactionId: text(200),
-    playerId: uuid,
-    walletId: uuid,
+    playerId: uuidSchema,
+    walletId: uuidSchema,
     roundId: text(200),
     gameId: text(200),
     kind: z.enum(['BET', 'WIN', 'LOSS', 'REFUND', 'ROLLBACK']),

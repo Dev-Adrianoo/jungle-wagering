@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  MethodNotAllowedException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import {
   DuplicateExternalTransactionError,
   IdempotencyKeyConflictError,
@@ -12,7 +18,10 @@ import {
   WalletNotFoundError,
 } from '../../../src/application/errors';
 import { InvalidMoneyError } from '../../../src/domain/money/money';
-import { InvalidTransactionStateError } from '../../../src/domain/wagering/wager-transaction';
+import {
+  InvalidTransactionStateError,
+  InvalidWagerTransactionError,
+} from '../../../src/domain/wagering/wager-transaction';
 import { NegativeInitialBalanceError } from '../../../src/domain/wallet/wallet';
 import { RequestValidationError } from '../../../src/interface/contracts/parse';
 import { toProblem } from '../../../src/interface/http/problem-details.filter';
@@ -33,6 +42,12 @@ describe('toProblem', () => {
     ],
     ['invalid cursor', new InvalidCursorError(), 400, 'VALIDATION_ERROR'],
     ['invalid money', new InvalidMoneyError('bad'), 400, 'INVALID_MONEY'],
+    [
+      'invalid wager transaction',
+      new InvalidWagerTransactionError('bad'),
+      400,
+      'INVALID_WAGER_TRANSACTION',
+    ],
     [
       'negative initial balance',
       new NegativeInitialBalanceError(),
@@ -66,6 +81,9 @@ describe('toProblem', () => {
     ['any other unique violation', new UniqueViolationError('c'), 500, 'INTERNAL_ERROR'],
     ['malformed body', new BadRequestException('bad json'), 400, 'VALIDATION_ERROR'],
     ['unknown route', new NotFoundException(), 404, 'NOT_FOUND'],
+    ['missing credentials', new UnauthorizedException(), 401, 'UNAUTHENTICATED'],
+    ['forbidden', new ForbiddenException(), 403, 'FORBIDDEN'],
+    ['wrong method', new MethodNotAllowedException(), 405, 'METHOD_NOT_ALLOWED'],
   ])('%s → %i %s', (_name, exception, status, code) => {
     const problem = toProblem(exception);
 
@@ -82,6 +100,8 @@ describe('toProblem', () => {
     [413, 'PAYLOAD_TOO_LARGE', 'request entity too large', 'entity.too.large'],
     [415, 'UNSUPPORTED_MEDIA_TYPE', 'unsupported charset', 'charset.unsupported'],
     [418, 'HTTP_ERROR', 'teapot', 'other'],
+    [400, 'VALIDATION_ERROR', 'bad request', 'other'],
+    [499, 'HTTP_ERROR', 'closed', 'other'],
   ])(
     'a client error with status %i from the body parser becomes %s',
     (status, code, message, type) => {
@@ -95,8 +115,34 @@ describe('toProblem', () => {
     },
   );
 
-  test.each([500, 302])('an error with status %i is still a generic 500', (status) => {
-    expect(toProblem(Object.assign(new Error('x'), { status })).status).toBe(500);
+  test.each([500, 302, 599, 413.5])('an error with status %p is still a generic 500', (status) => {
+    const problem = toProblem(Object.assign(new Error('x'), { status }));
+
+    expect(problem.status).toBe(500);
+    expect(problem.code).toBe('INTERNAL_ERROR');
+  });
+
+  test.each(['status', 'statusCode'])('a client error carrying only %s is recognised', (field) => {
+    const problem = toProblem(Object.assign(new Error('x'), { [field]: 413 }));
+
+    expect(problem.status).toBe(413);
+    expect(problem.code).toBe('PAYLOAD_TOO_LARGE');
+  });
+
+  test.each([
+    ['a bad request', new BadRequestException(), 'Invalid request'],
+    ['a conflict', new IdempotencyKeyConflictError('k'), 'Conflict'],
+    [
+      'a transient failure',
+      new TransientInfrastructureError('down'),
+      'Service temporarily unavailable',
+    ],
+  ])('%s has a readable title', (_name, exception, title) => {
+    expect(toProblem(exception).title).toBe(title);
+  });
+
+  test('an object that only looks like an error never maps to a status', () => {
+    expect(toProblem({ code: 'WALLET_NOT_FOUND', message: 'x' }).status).toBe(500);
   });
 
   test.each([

@@ -8,6 +8,7 @@ import {
   TransientInfrastructureError,
   UniqueViolationError,
 } from '../../application/errors';
+import { safely } from '../../application/observability/safely';
 import type { UnitOfWork } from '../../application/ports/unit-of-work';
 import { DomainError } from '../../domain/shared/domain-error';
 
@@ -17,6 +18,7 @@ interface ActiveContext {
 }
 
 const UNIQUE_VIOLATION = '23505';
+const LOCK_NOT_AVAILABLE = '55P03';
 
 const TRANSIENT_CODES = new Set([
   '55P03',
@@ -75,6 +77,7 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
   constructor(
     private readonly orm: MikroORM,
     private readonly lockTimeoutMs: number,
+    private readonly onLockConflict: () => void = () => {},
   ) {
     if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs <= 0) {
       throw new Error('lockTimeoutMs must be a positive integer');
@@ -91,6 +94,9 @@ export class MikroOrmUnitOfWork implements UnitOfWork {
         return this.active.run({ em, transactional: true }, work);
       });
     } catch (error) {
+      if (errorCode(error) === LOCK_NOT_AVAILABLE) {
+        safely(this.onLockConflict);
+      }
       throw translateDriverError(error);
     }
   }
