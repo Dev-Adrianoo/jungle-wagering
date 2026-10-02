@@ -16,7 +16,7 @@ import type { Logger } from '../../application/ports/logger';
 import type { ProviderIdentityPort } from '../../application/ports/provider-identity-port';
 import { buildCore, type Core } from '../../composition/core';
 import type { AppConfig } from '../../config/config';
-import { NoopIdentityAdapter } from '../../infrastructure/auth/noop-identity-adapter';
+import { identityAdapterFor } from '../../infrastructure/auth/identity-adapter';
 import { PinoLogger } from '../../infrastructure/observability/pino-logger';
 import { PrometheusMetrics } from '../../infrastructure/observability/prometheus-metrics';
 import { buildOrmConfig } from '../../infrastructure/persistence/orm.config';
@@ -140,7 +140,7 @@ export function registerAppModule(config: AppConfig, overrides: AppOverrides = {
       },
       {
         provide: PROVIDER_IDENTITY_PORT,
-        useValue: overrides.identityPort ?? new NoopIdentityAdapter(),
+        useValue: overrides.identityPort ?? identityAdapterFor(config),
       },
       { provide: APP_GUARD, useClass: AuthGuard },
       InfrastructureLifecycle,

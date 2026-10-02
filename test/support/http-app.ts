@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import type { AddressInfo } from 'node:net';
+import type { AppConfig } from '../../src/config/config';
 import type { AppOverrides } from '../../src/interface/http/app.module';
 import { createApp } from '../../src/interface/http/create-app';
 import type { TestDatabase } from './database';
@@ -20,7 +21,7 @@ export interface CallOptions {
 export async function startTestApp(
   db: TestDatabase,
   overrides: AppOverrides = {},
-  options: { queues?: TestQueues; workers?: boolean } = {},
+  options: { queues?: TestQueues; workers?: boolean; config?: Partial<AppConfig> } = {},
 ): Promise<TestApp> {
   const ownedQueues = options.queues ?? (await createTestQueues());
   const app = await createApp(
@@ -34,6 +35,7 @@ export async function startTestApp(
       sqsWaitTimeSeconds: 1,
       crashAt: undefined,
       sqs: ownedQueues.config,
+      ...options.config,
     },
     overrides,
   );

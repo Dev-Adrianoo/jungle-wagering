@@ -317,15 +317,31 @@ O ledger é a fonte da verdade; o saldo em `wallets` é um resumo. `POST /wallet
 
 ## Autenticação
 
-**Decisão: não implementei um provedor de identidade real.** O enunciado diz que autenticação não pontua; o tempo foi para concorrência, idempotência e mensageria. O que existe é o ponto de extensão completo, testado:
+O enunciado diz que autenticação não pontua. Por isso o padrão é **desligado** (`AUTH_MODE=noop`): o avaliador roda `docker compose up --build` e usa a API sem precisar de token. A autenticação real existe e é opcional (`AUTH_MODE=oidc`, ver README).
+
+**Ponto de extensão**
 
 - Porta `ProviderIdentityPort.identify(headers)` → `{ subject, roles, providerId? }`.
 - `AuthGuard` global, **negação por padrão**: rota sem `@Roles(...)` nem `@Public()` é recusada.
 - Papéis: `provider` (submete e consulta as próprias operações), `operator` (abre wallet, consulta, reconcilia), `auditor` (leitura e reconciliação).
 - Regra que importa: identidade ligada a um provedor só age naquele provedor. Se o `providerId` do corpo ou da rota for outro: 403 `PROVIDER_MISMATCH`.
-- Adaptador padrão (`AUTH_MODE=noop`) concede todos os papéis. As regras são testadas com um adaptador falso.
 
-**Desenho que adotaria:** OIDC com fluxo `client_credentials` (comunicação entre serviços). Um adaptador novo valida o JWT pela chave pública do emissor (JWKS), confere emissor, audiência e validade, lê os papéis das claims e o `providerId` de uma claim própria. Nada muda em controllers ou casos de uso: só o adaptador ligado à porta. Chaves inalcançáveis seriam falha passageira (503), não liberação nem recusa.
+**Adaptadores**
+
+| `AUTH_MODE` | Adaptador | Comportamento |
+|---|---|---|
+| `noop` (padrão) | `NoopIdentityAdapter` | concede todos os papéis, sem vínculo com provedor |
+| `oidc` | `OidcIdentityAdapter` | valida o JWT do Keycloak |
+
+**Como o modo `oidc` funciona**
+
+- Fluxo `client_credentials` (serviço para serviço): cada provedor é um cliente no Keycloak.
+- O token é validado localmente pela chave pública do emissor (JWKS), sem chamar o Keycloak a cada requisição. São conferidos assinatura, emissor, audiência (`wagering-api`) e validade.
+- Papéis vêm de `realm_access.roles`; o provedor vem da claim `provider_id`, fixada no cliente dentro do Keycloak (o provedor não escolhe o próprio id).
+- **Token inválido → 401. Chaves inalcançáveis → 503**, não 401 nem liberação: com o provedor de identidade fora do ar, recusar um chamador legítimo de forma definitiva ou deixar passar seriam respostas erradas. As chaves ficam em cache, então instâncias que já as carregaram continuam atendendo.
+- Nada mudou em controllers nem em casos de uso: é um adaptador novo ligado à mesma porta.
+
+- **Decisão:** validar JWT localmente por JWKS. **Descartado:** introspecção do token no Keycloak a cada requisição (uma chamada de rede por aposta e dependência dura da disponibilidade dele). **Custo:** um token revogado continua aceito até expirar (5 minutos no realm de desenvolvimento).
 
 ## Testes
 
@@ -359,11 +375,12 @@ Limite honesto: os testes de três processos não distinguem `SKIP LOCKED` de um
 - **`interface` importa `infrastructure` em dois pontos** (contexto de log, nomes de fila).
 - **Um banco só:** sem réplica nem particionamento. A escala horizontal é das instâncias da aplicação.
 - **Sem limpeza de `inbox_messages` e de eventos já publicados;** crescem indefinidamente.
-- **Autenticação real não implementada** (ver seção acima).
+- **Autenticação desligada por padrão;** token revogado vale até expirar (validação local por JWKS).
+- **Um 503 de todas as instâncias é devolvido como 503**, mas o nginx não distingue instância caída de instância ocupada (`max_fails=0`): instância morta só sai da rotação por erro de conexão a cada requisição.
 
 ## O que faria com mais tempo
 
-- Adaptador OIDC real (Keycloak) atrás da porta de identidade.
+- Rotação e gestão de segredos dos clientes; o realm versionado é só para desenvolvimento.
 - Aumentar a vazão do publisher da outbox (o teste de carga em [docs/LOAD_TEST.md](docs/LOAD_TEST.md) mostrou acúmulo sob pico).
 - Rotina de retenção para inbox e outbox.
 - Orçamento de tentativas e fila de inspeção para transações `FAILED`.

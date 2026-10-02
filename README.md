@@ -220,6 +220,36 @@ docker compose exec -T localstack awslocal sqs get-queue-attributes \
   --attribute-names ApproximateNumberOfMessages
 ```
 
+## Autenticação (opcional)
+
+Por padrão a API roda sem autenticação (`AUTH_MODE=noop`). Para ligar a autenticação real, com Keycloak:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.auth.yml up --build
+```
+
+Isso acrescenta um Keycloak (porta `KEYCLOAK_PORT`, padrão 8080) com o realm `wagering` já importado e sobe as instâncias com `AUTH_MODE=oidc`. A partir daí toda rota, menos `/health`, exige `Authorization: Bearer <token>`.
+
+Clientes de desenvolvimento (segredo = `<cliente>-dev-secret`):
+
+| Cliente | Papel | Pode |
+|---|---|---|
+| `operator` | `operator` | abrir wallet, consultar, reconciliar |
+| `provider-a`, `provider-b` | `provider` | submeter operações e consultar as próprias, só do seu `providerId` |
+| `auditor` | `auditor` | consultar e reconciliar |
+
+Obter um token e usar:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/realms/wagering/protocol/openid-connect/token   -d grant_type=client_credentials -d client_id=operator -d client_secret=operator-dev-secret   | sed -E 's/.*"access_token":"([^"]+)".*//')
+
+curl -s -X POST $BASE/wallets   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'   -d "{\"playerId\":\"$PLAYER_ID\",\"initialBalance\":{\"amount\":\"100.00\",\"currency\":\"BRL\"}}"
+```
+
+Sem token: `401`. Papel errado: `403 FORBIDDEN`. `provider-a` enviando `providerId` de outro provedor: `403 PROVIDER_MISMATCH`. Keycloak fora do ar e chaves ainda não carregadas: `503` (pode reenviar).
+
+O realm e os segredos em `keycloak/realm.json` são só para desenvolvimento.
+
 ## Testes
 
 Os testes de integração e de concorrência usam PostgreSQL e SQS reais. Suba só os dois e instale as dependências:
@@ -249,7 +279,8 @@ Cada arquivo de teste cria o próprio banco e as próprias filas e os remove no 
 | `PORT` | `3000` | porta HTTP da instância |
 | `DATABASE_URL` | (obrigatória) | conexão com o PostgreSQL |
 | `LOCK_TIMEOUT_MS` | `3000` | espera máxima pela trava de uma wallet; ao estourar, responde 503 |
-| `AUTH_MODE` | `noop` | adaptador de identidade (ver ARCHITECTURE.md, Autenticação) |
+| `AUTH_MODE` | `noop` | `noop` libera tudo; `oidc` exige token (ver [Autenticação](#autenticação-opcional)) |
+| `OIDC_ISSUER`, `OIDC_JWKS_URL`, `OIDC_AUDIENCE` | (vazio) | obrigatórias quando `AUTH_MODE=oidc` |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` ou `silent` |
 | `SQS_ENDPOINT` | (vazio) | endpoint do SQS; definido para usar o LocalStack |
 | `AWS_REGION` | `us-east-1` | |
