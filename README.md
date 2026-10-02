@@ -236,6 +236,7 @@ bun install
 | `bun run test:regression` | um teste por bug encontrado durante o desenvolvimento |
 | `bun run test:concurrency` | três processos reais no mesmo banco e nas mesmas filas: disputa de saldo, idempotência, ordem por wallet, queda após commit e antes do ack, queda após publicar e antes de marcar |
 | `bun run test:all` | os quatro acima, em sequência |
+| `bun run test:load` | teste de carga com k6 contra a stack completa do Compose; números e análise em [docs/LOAD_TEST.md](docs/LOAD_TEST.md) |
 | `bun run lint` | Biome |
 | `bun run typecheck` | `tsc --noEmit` |
 
