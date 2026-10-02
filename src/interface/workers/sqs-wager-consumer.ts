@@ -61,19 +61,25 @@ export class SqsWagerConsumer {
   private async run(): Promise<void> {
     while (this.running) {
       const messages = await this.receive();
-      const blockedGroups = new Set<string>();
+      const blockedGroups = new Map<string, number>();
       for (const message of messages) {
         const group = message.Attributes?.MessageGroupId ?? '';
         try {
-          if (!this.running || blockedGroups.has(group)) {
+          if (!this.running) {
             await this.changeVisibility(message, 0);
             continue;
           }
-          if (await this.process(message)) {
-            blockedGroups.add(group);
+          const blockedFor = blockedGroups.get(group);
+          if (blockedFor !== undefined) {
+            await this.changeVisibility(message, blockedFor);
+            continue;
+          }
+          const retryAfter = await this.process(message);
+          if (retryAfter !== undefined) {
+            blockedGroups.set(group, retryAfter);
           }
         } catch (error) {
-          blockedGroups.add(group);
+          blockedGroups.set(group, this.backoffFor(message));
           safely(() =>
             this.deps.logger.error('sqs.message_failed', {
               sqsMessageId: message.MessageId,
@@ -110,31 +116,39 @@ export class SqsWagerConsumer {
     }
   }
 
-  private async process(message: Message): Promise<boolean> {
-    const { handler, crashPoint, metrics, options } = this.deps;
+  private async process(message: Message): Promise<number | undefined> {
+    const { handler, crashPoint, metrics } = this.deps;
     const disposition = await handler.handle(message.Body ?? '');
     crashPoint.reached('consumer.after-commit-before-ack');
 
     if (disposition.action === 'ack') {
       await this.delete(message);
-      return false;
+      return undefined;
     }
     if (disposition.action === 'dead-letter') {
       await this.deadLetter(message, disposition.reason);
-      return false;
+      return undefined;
     }
-    const receiveCount = Number(message.Attributes?.ApproximateReceiveCount ?? 1);
-    if (receiveCount >= MAX_RECEIVE_COUNT) {
+    if (this.receiveCountOf(message) >= MAX_RECEIVE_COUNT) {
       await this.deadLetter(message, 'RETRIES_EXHAUSTED');
-      return false;
+      return undefined;
     }
     safely(() => metrics.messageRetried());
-    const backoff = Math.min(
-      options.baseBackoffSeconds * 2 ** (receiveCount - 1),
+    const backoff = this.backoffFor(message);
+    await this.changeVisibility(message, backoff);
+    return backoff;
+  }
+
+  private receiveCountOf(message: Message): number {
+    return Number(message.Attributes?.ApproximateReceiveCount ?? 1);
+  }
+
+  private backoffFor(message: Message): number {
+    const { options } = this.deps;
+    return Math.min(
+      options.baseBackoffSeconds * 2 ** (this.receiveCountOf(message) - 1),
       options.maxBackoffSeconds,
     );
-    await this.changeVisibility(message, backoff);
-    return true;
   }
 
   private async deadLetter(message: Message, reason: string): Promise<void> {

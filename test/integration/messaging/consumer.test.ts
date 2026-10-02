@@ -41,6 +41,7 @@ afterAll(async () => {
 
 function startConsumer(
   submitWager: Pick<SubmitWagerTransaction, 'executeFromMessage'> = core.submitWager,
+  baseBackoffSeconds = 0,
 ) {
   consumer = new SqsWagerConsumer({
     client: queues.client,
@@ -49,7 +50,12 @@ function startConsumer(
     metrics,
     logger: new SilentLogger(),
     crashPoint: new NoopCrashPoint(),
-    options: { waitTimeSeconds: 1, batchSize: 10, baseBackoffSeconds: 0, maxBackoffSeconds: 0 },
+    options: {
+      waitTimeSeconds: 1,
+      batchSize: 10,
+      baseBackoffSeconds,
+      maxBackoffSeconds: baseBackoffSeconds,
+    },
   });
   consumer.start();
 }
@@ -85,6 +91,8 @@ function message(
   };
 }
 
+const retriesTotal = async () =>
+  Number(/^sqs_retries_total (\d+)/m.exec(await metrics.render())?.[1] ?? 0);
 const balanceOf = async (walletId: string) =>
   (await core.walletQueries.getWallet(walletId)).balance.amount;
 const queueIsEmpty = () =>
@@ -162,6 +170,7 @@ describe('SqsWagerConsumer', () => {
     expect(await queues.depth(queues.urls.transactions)).toBe(0);
     expect(await transactionsFor(wallet)).toHaveLength(0);
     expect(await balanceOf(wallet.id)).toBe('100.00');
+    await expectLedgerMatchesBalance(db, wallet.id);
   });
 
   test('a message for an unknown wallet is dead-lettered and does not block the next one', async () => {
@@ -199,6 +208,7 @@ describe('SqsWagerConsumer', () => {
   test('a transient failure is retried until it succeeds, with one effect', async () => {
     const wallet = await open('100.00');
     let failuresLeft = 2;
+    const retriesBefore = await retriesTotal();
     startConsumer({
       executeFromMessage: async (command, inbox) => {
         if (failuresLeft > 0) {
@@ -214,7 +224,7 @@ describe('SqsWagerConsumer', () => {
 
     expect(failuresLeft).toBe(0);
     expect(await balanceOf(wallet.id)).toBe('75.00');
-    expect(await metrics.render()).toMatch(/sqs_retries_total [2-9]/);
+    expect((await retriesTotal()) - retriesBefore).toBe(2);
     await expectLedgerMatchesBalance(db, wallet.id);
   });
 
@@ -235,6 +245,64 @@ describe('SqsWagerConsumer', () => {
     expect(attempts).toBe(5);
     expect(await queues.depth(queues.urls.transactions)).toBe(0);
     expect(await balanceOf(wallet.id)).toBe('100.00');
+    await expectLedgerMatchesBalance(db, wallet.id);
+  });
+
+  test('a retry blocks the later messages of the same group in the batch and spares other groups', async () => {
+    const walletA = await open('100.00');
+    const walletB = await open('100.00');
+    const first = message(walletA);
+    const second = message(walletA);
+    const other = message(walletB);
+    const handled: string[] = [];
+    let firstFailed = false;
+    await queues.send(first, { groupId: walletA.id });
+    await queues.send(second, { groupId: walletA.id });
+    await queues.send(other, { groupId: walletB.id });
+    startConsumer(
+      {
+        executeFromMessage: async (command, inbox) => {
+          if (command.payload.externalTransactionId === first.data.externalTransactionId) {
+            if (!firstFailed) {
+              firstFailed = true;
+              handled.push('first:failed');
+              throw new TransientInfrastructureError('database is temporarily unavailable');
+            }
+            const outcome = await core.submitWager.executeFromMessage(command, inbox);
+            handled.push('first:applied');
+            return outcome;
+          }
+          const outcome = await core.submitWager.executeFromMessage(command, inbox);
+          handled.push(
+            command.payload.externalTransactionId === second.data.externalTransactionId
+              ? 'second:applied'
+              : 'other:applied',
+          );
+          return outcome;
+        },
+      },
+      2,
+    );
+
+    await queueIsEmpty();
+
+    expect(handled.filter((event) => event.startsWith('second'))).toEqual(['second:applied']);
+    expect(handled.indexOf('first:applied')).toBeLessThan(handled.indexOf('second:applied'));
+    expect(handled.indexOf('other:applied')).toBeLessThan(handled.indexOf('first:applied'));
+    const ledger = await db.query<{ external_transaction_id: string }>(
+      `select t.external_transaction_id from wallet_ledger_entries e
+         join wager_transactions t on t.id = e.transaction_id
+        where e.wallet_id = ? and t.kind <> 'OPENING' order by e.seq`,
+      [walletA.id],
+    );
+    expect(ledger.map((row) => row.external_transaction_id)).toEqual([
+      first.data.externalTransactionId,
+      second.data.externalTransactionId,
+    ]);
+    expect(await balanceOf(walletA.id)).toBe('50.00');
+    expect(await balanceOf(walletB.id)).toBe('75.00');
+    await expectLedgerMatchesBalance(db, walletA.id);
+    await expectLedgerMatchesBalance(db, walletB.id);
   });
 
   test('stop() finishes the message in flight and leaves later messages on the queue', async () => {
@@ -249,5 +317,6 @@ describe('SqsWagerConsumer', () => {
 
     expect(await queues.depth(queues.urls.transactions)).toBe(1);
     expect(await balanceOf(wallet.id)).toBe('75.00');
+    await expectLedgerMatchesBalance(db, wallet.id);
   });
 });

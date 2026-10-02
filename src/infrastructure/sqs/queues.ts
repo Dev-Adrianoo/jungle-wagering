@@ -1,7 +1,12 @@
+// The consumer counts attempts itself (MAX_RECEIVE_COUNT) and dead-letters with a reason.
+// Releasing a message untouched still counts as a receive for SQS, so the native redrive uses a
+// higher limit and only catches messages the consumer could not dead-letter itself.
+// CreateQueue fails when an existing queue has other attributes, so they are applied afterwards.
 import {
   CreateQueueCommand,
   GetQueueAttributesCommand,
   GetQueueUrlCommand,
+  SetQueueAttributesCommand,
   type SQSClient,
 } from '@aws-sdk/client-sqs';
 import type { SqsConfig } from '../../config/config';
@@ -13,17 +18,14 @@ export interface QueueUrls {
 }
 
 export const MAX_RECEIVE_COUNT = 5;
+export const REDRIVE_BACKSTOP_RECEIVE_COUNT = 15;
 const DEFAULT_VISIBILITY_TIMEOUT_SECONDS = 30;
 
-async function createFifoQueue(
-  client: SQSClient,
-  name: string,
-  attributes: Record<string, string>,
-): Promise<string> {
+async function createFifoQueue(client: SQSClient, name: string): Promise<string> {
   const created = await client.send(
     new CreateQueueCommand({
       QueueName: name,
-      Attributes: { FifoQueue: 'true', ContentBasedDeduplication: 'false', ...attributes },
+      Attributes: { FifoQueue: 'true', ContentBasedDeduplication: 'false' },
     }),
   );
   if (!created.QueueUrl) {
@@ -49,15 +51,19 @@ export async function ensureQueues(
   options: { visibilityTimeoutSeconds?: number } = {},
 ): Promise<QueueUrls> {
   const visibility = String(options.visibilityTimeoutSeconds ?? DEFAULT_VISIBILITY_TIMEOUT_SECONDS);
-  const deadLetter = await createFifoQueue(client, config.deadLetterQueue, {});
-  const events = await createFifoQueue(client, config.eventsQueue, {});
-  const transactions = await createFifoQueue(client, config.transactionsQueue, {
+  const deadLetter = await createFifoQueue(client, config.deadLetterQueue);
+  const events = await createFifoQueue(client, config.eventsQueue);
+  const transactionsAttributes = {
     VisibilityTimeout: visibility,
     RedrivePolicy: JSON.stringify({
       deadLetterTargetArn: await arnOf(client, deadLetter),
-      maxReceiveCount: MAX_RECEIVE_COUNT,
+      maxReceiveCount: REDRIVE_BACKSTOP_RECEIVE_COUNT,
     }),
-  });
+  };
+  const transactions = await createFifoQueue(client, config.transactionsQueue);
+  await client.send(
+    new SetQueueAttributesCommand({ QueueUrl: transactions, Attributes: transactionsAttributes }),
+  );
   return { transactions, deadLetter, events };
 }
 
