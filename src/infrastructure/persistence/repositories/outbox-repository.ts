@@ -12,8 +12,8 @@ export class MikroOrmOutboxRepository implements OutboxRepository {
     await this.uow.em().insert(OutboxMessageRecord, toOutboxRecord(message));
   }
 
-  // SKIP LOCKED makes concurrent publishers take disjoint rows instead of waiting for each
-  // other, so the same event is never held by two publishers at once.
+  // Rows already locked by another publisher are skipped, not waited for (SKIP LOCKED), so
+  // concurrent publishers take disjoint rows and never queue behind each other.
   async claimDue(now: Date, limit: number): Promise<OutboxMessage[]> {
     const records = await this.uow.em().find(
       OutboxMessageRecord,
