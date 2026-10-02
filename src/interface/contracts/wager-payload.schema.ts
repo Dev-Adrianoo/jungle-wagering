@@ -7,6 +7,7 @@ import { nonNegativeMoneySchema } from './money.schema';
 import { parseWith } from './parse';
 
 const text = (max: number) => z.string().min(1).max(max);
+const uuid = z.uuid().transform((value) => value.toLowerCase());
 const ZERO = /^0(\.0{1,2})?$/;
 
 export const wagerPayloadSchema = z
@@ -15,8 +16,8 @@ export const wagerPayloadSchema = z
       message: 'is reserved for internal transactions',
     }),
     externalTransactionId: text(200),
-    playerId: z.uuid(),
-    walletId: z.uuid(),
+    playerId: uuid,
+    walletId: uuid,
     roundId: text(200),
     gameId: text(200),
     kind: z.enum(['BET', 'WIN', 'LOSS', 'REFUND', 'ROLLBACK']),

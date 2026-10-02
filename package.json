@@ -11,6 +11,7 @@
     "lint:fix": "biome check --write .",
     "test": "bun test ./test/unit",
     "test:integration": "bun test ./test/integration --timeout 30000",
+    "test:regression": "bun test ./test/regression --timeout 30000",
     "db:migrate": "bun run src/infrastructure/persistence/migrate.ts up",
     "db:rollback": "bun run src/infrastructure/persistence/migrate.ts down"
   },

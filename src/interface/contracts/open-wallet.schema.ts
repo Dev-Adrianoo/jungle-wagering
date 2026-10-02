@@ -1,13 +1,15 @@
 import { z } from 'zod';
 import { nonNegativeMoneySchema } from './money.schema';
 
+const uuid = z.uuid().transform((value) => value.toLowerCase());
+
 export const openWalletSchema = z.object({
-  playerId: z.uuid(),
+  playerId: uuid,
   initialBalance: nonNegativeMoneySchema,
 });
 
 export const walletParamsSchema = z.object({
-  walletId: z.uuid(),
+  walletId: uuid,
 });
 
 export const ledgerQuerySchema = z.object({

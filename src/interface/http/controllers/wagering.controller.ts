@@ -10,7 +10,9 @@ import { Roles } from '../auth/decorators';
 import { CorrelationId } from '../correlation';
 import { CORE } from '../tokens';
 
-const transactionParamsSchema = z.object({ transactionId: z.uuid() });
+const transactionParamsSchema = z.object({
+  transactionId: z.uuid().transform((value) => value.toLowerCase()),
+});
 
 const providerTransactionParamsSchema = z.object({
   providerId: z.string().min(1).max(100),
