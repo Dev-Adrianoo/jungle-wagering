@@ -9,4 +9,10 @@ export interface TransactionRepository {
     externalTransactionId: string,
   ): Promise<WagerTransaction | undefined>;
   isReversed(referenceTransactionId: string): Promise<boolean>;
+  findDuePendingReferences(
+    now: Date,
+    limit: number,
+  ): Promise<Array<{ id: string; walletId: string }>>;
+  findByIdForUpdate(id: string): Promise<WagerTransaction | undefined>;
+  update(transaction: WagerTransaction): Promise<void>;
 }

@@ -18,6 +18,7 @@ import { WalletQueries } from '../application/queries/wallet-queries';
 import { OpenWallet } from '../application/use-cases/open-wallet';
 import { PublishOutbox } from '../application/use-cases/publish-outbox';
 import { ReconcileWallet } from '../application/use-cases/reconcile-wallet';
+import { ResolvePendingReferences } from '../application/use-cases/resolve-pending-references';
 import { SubmitWagerTransaction } from '../application/use-cases/submit-wager-transaction';
 import { defaultPolicies } from '../domain/wagering/policies/default-policies';
 import { WagerProcessor } from '../domain/wagering/wager-processor';
@@ -62,6 +63,7 @@ export interface Core {
   reconcileWallet: ReconcileWallet;
   submitWager: SubmitWagerTransaction;
   publishOutbox: PublishOutbox;
+  resolvePendingReferences: ResolvePendingReferences;
   crashPoint: CrashPoint;
 }
 
@@ -116,6 +118,18 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
       metrics,
       logger,
       crashPoint,
+    }),
+    resolvePendingReferences: new ResolvePendingReferences({
+      uow,
+      wallets,
+      transactions,
+      ledger,
+      outbox,
+      processor,
+      clock,
+      ids,
+      metrics,
+      logger,
     }),
     crashPoint,
   };
