@@ -142,7 +142,7 @@ describe('a running instance', () => {
             [wallet.id],
           )
         ).length === 1,
-      { timeoutMs: 30_000, description: 'the refund to be resolved by the worker' },
+      { timeoutMs: 20_000, description: 'the refund to be resolved by the worker' },
     );
     expect(await balanceOf(wallet.id)).toBe('100.00');
     await expectLedgerMatchesBalance(db, wallet.id);

@@ -121,6 +121,7 @@ export function registerAppModule(config: AppConfig, overrides: AppOverrides = {
           new Workers({
             core,
             logger,
+            crashAt: config.crashAt,
             consumer: new SqsWagerConsumer({
               client: sqs,
               urls,

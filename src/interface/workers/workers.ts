@@ -16,6 +16,7 @@ export interface WorkersDependencies {
   core: Core;
   consumer: SqsWagerConsumer;
   logger: Logger;
+  crashAt?: string | undefined;
 }
 
 export class Workers {
@@ -29,7 +30,9 @@ export class Workers {
       OUTBOX_IDLE_DELAY_MS,
       async () => {
         const published = await core.publishOutbox.execute();
-        await core.publishOutbox.observe();
+        await core.publishOutbox.observe().catch(() => {
+          safely(() => logger.warn('outbox.observe_failed', {}));
+        });
         return published;
       },
       logger,
@@ -46,6 +49,10 @@ export class Workers {
   }
 
   start(): void {
+    const { crashAt, logger } = this.deps;
+    if (crashAt !== undefined) {
+      safely(() => logger.warn('workers.fault_injection_armed', { crashAt }));
+    }
     this.deps.consumer.start();
     this.outbox.start();
     this.pendingReferences.start();
