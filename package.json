@@ -12,6 +12,8 @@
     "test": "bun test ./test/unit",
     "test:integration": "bun test ./test/integration --timeout 30000",
     "test:regression": "bun test ./test/regression --timeout 30000",
+    "test:concurrency": "bun test ./test/concurrency --timeout 120000",
+    "test:all": "bun run test && bun run test:integration && bun run test:regression && bun run test:concurrency",
     "setup": "bun run src/setup.ts",
     "db:migrate": "bun run src/infrastructure/persistence/migrate.ts up",
     "db:rollback": "bun run src/infrastructure/persistence/migrate.ts down"

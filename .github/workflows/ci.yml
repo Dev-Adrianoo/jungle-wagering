@@ -28,7 +28,7 @@ jobs:
     name: Integration tests with PostgreSQL and SQS
     runs-on: ubuntu-latest
     needs: static
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       TEST_DATABASE_URL: postgres://wagering:wagering@localhost:5440/wagering
       TEST_SQS_ENDPOINT: http://localhost:4566
@@ -41,6 +41,7 @@ jobs:
       - run: docker compose up -d --wait postgres localstack
       - run: bun run test:integration
       - run: bun run test:regression
+      - run: bun run test:concurrency
       - name: Container logs
         if: failure()
         run: docker compose logs --no-color
