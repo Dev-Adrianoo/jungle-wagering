@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import {
+  DuplicateExternalTransactionError,
+  IdempotencyKeyConflictError,
+} from '../../../src/application/errors';
 import type { WagerPayload } from '../../../src/application/idempotency/payload-hash';
 import type { SubmitWagerCommand } from '../../../src/application/use-cases/submit-wager-transaction';
 import type { WalletView } from '../../../src/application/views';
@@ -137,8 +141,71 @@ describe('concurrent bets', () => {
     ]);
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const rejected = results.filter((result) => result.status === 'rejected');
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(
+      IdempotencyKeyConflictError,
+    );
     expect(await debitsOf(wallet.id)).toHaveLength(1);
     await expectLedgerMatchesBalance(db, wallet.id);
+  });
+});
+
+const ROUNDS = 20;
+
+const rowsWhere = async (column: string, value: string) =>
+  (await db.query(`select id from wager_transactions where ${column} = ?`, [value])).length;
+
+describe('idempotency races across wallets', () => {
+  test('the same key on two wallets: one wins, the other is an idempotency conflict', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const [walletA, walletB] = await Promise.all([open('100.00'), open('100.00')]);
+      const first = bet(walletA, '10.00');
+      const second = { ...bet(walletB, '10.00'), idempotencyKey: first.idempotencyKey };
+
+      const results = await Promise.allSettled([
+        core.submitWager.execute(first),
+        core.submitWager.execute(second),
+      ]);
+
+      const rejected = results.filter((result) => result.status === 'rejected');
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(
+        IdempotencyKeyConflictError,
+      );
+      expect(await rowsWhere('idempotency_key', first.idempotencyKey)).toBe(1);
+      expect((await debitsOf(walletA.id)).length + (await debitsOf(walletB.id)).length).toBe(1);
+      await expectLedgerMatchesBalance(db, walletA.id);
+      await expectLedgerMatchesBalance(db, walletB.id);
+    }
+  });
+
+  test('the same provider transaction under two keys on two wallets: one wins, the other is a duplicate', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const [walletA, walletB] = await Promise.all([open('100.00'), open('100.00')]);
+      const first = bet(walletA, '10.00');
+      const second = bet(walletB, '10.00');
+      second.payload.externalTransactionId = first.payload.externalTransactionId;
+      second.idempotencyKey = `other-${randomUUID()}`;
+
+      const results = await Promise.allSettled([
+        core.submitWager.execute(first),
+        core.submitWager.execute(second),
+      ]);
+
+      const rejected = results.filter((result) => result.status === 'rejected');
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(
+        DuplicateExternalTransactionError,
+      );
+      expect(await rowsWhere('external_transaction_id', first.payload.externalTransactionId)).toBe(
+        1,
+      );
+      expect((await debitsOf(walletA.id)).length + (await debitsOf(walletB.id)).length).toBe(1);
+      await expectLedgerMatchesBalance(db, walletA.id);
+      await expectLedgerMatchesBalance(db, walletB.id);
+    }
   });
 });
