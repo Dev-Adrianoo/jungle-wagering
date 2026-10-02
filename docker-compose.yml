@@ -15,5 +15,18 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  localstack:
+    image: localstack/localstack:3.8.1
+    environment:
+      SERVICES: sqs
+      EAGER_SERVICE_LOADING: "1"
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"sqs\": \"\\(running\\|available\\)\"'"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   postgres-data:

@@ -12,10 +12,12 @@
     "test": "bun test ./test/unit",
     "test:integration": "bun test ./test/integration --timeout 30000",
     "test:regression": "bun test ./test/regression --timeout 30000",
+    "setup": "bun run src/setup.ts",
     "db:migrate": "bun run src/infrastructure/persistence/migrate.ts up",
     "db:rollback": "bun run src/infrastructure/persistence/migrate.ts down"
   },
   "dependencies": {
+    "@aws-sdk/client-sqs": "3.1145.0",
     "@mikro-orm/core": "6.6.16",
     "@mikro-orm/migrations": "6.6.16",
     "@mikro-orm/postgresql": "6.6.16",

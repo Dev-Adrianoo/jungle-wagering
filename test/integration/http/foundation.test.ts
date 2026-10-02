@@ -23,11 +23,14 @@ describe('health', () => {
     expect(response.body).toEqual({ status: 'ok' });
   });
 
-  test('GET /health/ready reports PostgreSQL as reachable', async () => {
+  test('GET /health/ready reports PostgreSQL and SQS as reachable', async () => {
     const response = await call(app, 'GET', '/health/ready');
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ status: 'ok', checks: { postgres: 'up' } });
+    expect(response.body).toEqual({
+      status: 'ok',
+      checks: { postgres: 'up', sqs: 'up' },
+    });
   });
 });
 

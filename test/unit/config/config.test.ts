@@ -9,6 +9,13 @@ describe('loadConfig', () => {
       lockTimeoutMs: 3000,
       authMode: 'noop',
       logLevel: 'info',
+      sqs: {
+        endpoint: undefined,
+        region: 'us-east-1',
+        transactionsQueue: 'wager-transactions.fifo',
+        deadLetterQueue: 'wager-transactions-dlq.fifo',
+        eventsQueue: 'wager-events.fifo',
+      },
     });
   });
 
@@ -29,5 +36,24 @@ describe('loadConfig', () => {
 
   test('rejects a non-numeric port', () => {
     expect(() => loadConfig({ DATABASE_URL: 'x', PORT: 'abc' })).toThrow(/PORT/);
+  });
+
+  test('reads the SQS settings with their defaults', () => {
+    const config = loadConfig({ DATABASE_URL: 'x' });
+
+    expect(config.sqs).toEqual({
+      endpoint: undefined,
+      region: 'us-east-1',
+      transactionsQueue: 'wager-transactions.fifo',
+      deadLetterQueue: 'wager-transactions-dlq.fifo',
+      eventsQueue: 'wager-events.fifo',
+    });
+    expect(config.logLevel).toBe('info');
+  });
+
+  test('refuses a queue name that is not FIFO', () => {
+    expect(() => loadConfig({ DATABASE_URL: 'x', SQS_EVENTS_QUEUE: 'wager-events' })).toThrow(
+      /SQS_EVENTS_QUEUE/,
+    );
   });
 });
