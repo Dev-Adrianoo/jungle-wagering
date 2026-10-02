@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import type { WagerPayload } from '../../../src/application/idempotency/payload-hash';
+import type { Logger } from '../../../src/application/ports/logger';
 import type { WalletView } from '../../../src/application/views';
 import { buildCore, type Core } from '../../../src/composition/core';
+import type { OutboxMessage } from '../../../src/domain/messaging/outbox-message';
 import { WagerTransactionStatus } from '../../../src/domain/wagering/wager-transaction';
 import { createTestDatabase, type TestDatabase } from '../../support/database';
 import { expectLedgerMatchesBalance } from '../../support/invariants';
@@ -119,6 +121,7 @@ describe('ResolvePendingReferences', () => {
       status: 'PENDING_REFERENCE',
       reference_attempts: 0,
     });
+    await expectLedgerMatchesBalance(db, wallet.id);
   });
 
   test('a miss schedules the next attempt with backoff and emits no new event', async () => {
@@ -133,6 +136,7 @@ describe('ResolvePendingReferences', () => {
     expect(row).toMatchObject({ status: 'PENDING_REFERENCE', reference_attempts: 1 });
     expect(new Date(row?.next_attempt_at as Date).getTime()).toBe(attemptedAt.getTime() + 10_000);
     expect(await eventsOf(refundId)).toEqual(['WagerTransactionPendingReference']);
+    await expectLedgerMatchesBalance(db, wallet.id);
   });
 
   test('gives up after the attempt limit with REFERENCE_NOT_FOUND', async () => {
@@ -210,12 +214,19 @@ describe('ResolvePendingReferences', () => {
     const refundId = await pendingRefund(wallet, betExternalId);
     await submit(core, wallet, { externalTransactionId: betExternalId });
     clock.advanceSeconds(6);
-    const other = buildCore(db.orm, { lockTimeoutMs: 5000, clock });
+    const lines: string[] = [];
+    const logger: Logger = {
+      info: () => {},
+      warn: (event) => void lines.push(event),
+      error: (event) => void lines.push(event),
+    };
+    const first = buildCore(db.orm, { lockTimeoutMs: 5000, clock, logger });
+    const second = buildCore(db.orm, { lockTimeoutMs: 5000, clock, logger });
 
     await Promise.all([
-      core.resolvePendingReferences.execute(),
-      other.resolvePendingReferences.execute(),
-      core.resolvePendingReferences.execute(),
+      first.resolvePendingReferences.execute(),
+      second.resolvePendingReferences.execute(),
+      first.resolvePendingReferences.execute(),
     ]);
 
     const credits = await db.query(
@@ -223,6 +234,12 @@ describe('ResolvePendingReferences', () => {
       [refundId],
     );
     expect(credits).toHaveLength(1);
+    expect(await eventsOf(refundId)).toEqual([
+      'WagerTransactionPendingReference',
+      'WagerTransactionProcessed',
+      'WalletBalanceChanged',
+    ]);
+    expect(lines).toEqual([]);
     expect(await balanceOf(wallet.id)).toBe('100.00');
     await expectLedgerMatchesBalance(db, wallet.id);
   });
@@ -234,6 +251,8 @@ describe('ResolvePendingReferences', () => {
     await submit(core, wallet, { externalTransactionId: betExternalId });
     clock.advanceSeconds(6);
     let breakNextInsert = true;
+    const belongsToRefund = (message: OutboxMessage) =>
+      (message.payload as { data?: { transactionId?: string } }).data?.transactionId === refundId;
     const sabotaged = buildCore(db.orm, {
       lockTimeoutMs: 5000,
       clock,
@@ -243,7 +262,7 @@ describe('ResolvePendingReferences', () => {
         save: outbox.save.bind(outbox),
         stats: outbox.stats.bind(outbox),
         insert: async (message) => {
-          if (breakNextInsert) {
+          if (breakNextInsert && belongsToRefund(message)) {
             breakNextInsert = false;
             throw new Error('unexpected bug while recording the event');
           }

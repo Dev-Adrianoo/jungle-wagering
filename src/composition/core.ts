@@ -44,6 +44,7 @@ export interface CoreOptions {
   publisher?: EventPublisher;
   crashPoint?: CrashPoint;
   decorateOutbox?: (outbox: OutboxRepository) => OutboxRepository;
+  decorateTransactions?: (transactions: TransactionRepository) => TransactionRepository;
 }
 
 export interface Core {
@@ -74,7 +75,10 @@ export function buildCore(orm: MikroORM, options: CoreOptions): Core {
   const clock = options.clock ?? new SystemClock();
   const ids = options.ids ?? new UuidV7IdGenerator();
   const wallets = new MikroOrmWalletRepository(uow);
-  const transactions = new MikroOrmTransactionRepository(uow);
+  const baseTransactions = new MikroOrmTransactionRepository(uow);
+  const transactions = options.decorateTransactions
+    ? options.decorateTransactions(baseTransactions)
+    : baseTransactions;
   const ledger = new MikroOrmLedgerRepository(uow);
   const baseOutbox = options.outbox ?? new MikroOrmOutboxRepository(uow);
   const outbox = options.decorateOutbox ? options.decorateOutbox(baseOutbox) : baseOutbox;

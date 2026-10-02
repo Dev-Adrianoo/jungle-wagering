@@ -11,7 +11,12 @@ import {
   type WagerTransaction,
   WagerTransactionStatus,
 } from '../../domain/wagering/wager-transaction';
-import { StaleTransactionError, TransientInfrastructureError } from '../errors';
+import {
+  StaleTransactionError,
+  StaleWalletVersionError,
+  TransientInfrastructureError,
+  UniqueViolationError,
+} from '../errors';
 import { eventsFor } from '../events/wager-event-factory';
 import { safely } from '../observability/safely';
 import type { Clock } from '../ports/clock';
@@ -61,7 +66,10 @@ export class ResolvePendingReferences {
   private async resolve(candidate: Candidate): Promise<void> {
     const { logger } = this.deps;
     try {
-      await this.deps.uow.run(() => this.attempt(candidate));
+      const resolved = await this.deps.uow.run(() => this.attempt(candidate));
+      if (resolved) {
+        this.record(resolved);
+      }
     } catch (error) {
       if (error instanceof TransientInfrastructureError) {
         safely(() =>
@@ -69,7 +77,17 @@ export class ResolvePendingReferences {
         );
         return;
       }
+      if (error instanceof StaleWalletVersionError || error instanceof UniqueViolationError) {
+        safely(() =>
+          logger.warn('pending_reference.conflict', {
+            transactionId: candidate.id,
+            code: error.code,
+          }),
+        );
+        return;
+      }
       if (error instanceof StaleTransactionError) {
+        safely(() => logger.warn('pending_reference.stale', { transactionId: candidate.id }));
         return;
       }
       safely(() =>
@@ -101,11 +119,11 @@ export class ResolvePendingReferences {
     return { wallet, transaction, now };
   }
 
-  private async attempt(candidate: Candidate): Promise<void> {
+  private async attempt(candidate: Candidate): Promise<WagerTransaction | undefined> {
     const { wallets, transactions, ledger, processor, ids } = this.deps;
     const locked = await this.lockIfStillDue(candidate);
     if (!locked) {
-      return;
+      return undefined;
     }
     const { wallet, transaction, now } = locked;
 
@@ -134,10 +152,11 @@ export class ResolvePendingReferences {
       await wallets.updateBalance(wallet, expectedVersion);
       await ledger.insert(entry);
     }
-    if (transaction.isTerminal()) {
-      await this.emit(eventsFor(transaction, wallet, entry, this.contextFor(transaction, now)));
-      this.record(transaction);
+    if (!transaction.isTerminal()) {
+      return undefined;
     }
+    await this.emit(eventsFor(transaction, wallet, entry, this.contextFor(transaction, now)));
+    return transaction;
   }
 
   // A failure that is neither transient nor a business rule would otherwise be retried
@@ -145,10 +164,10 @@ export class ResolvePendingReferences {
   private async markFailed(candidate: Candidate): Promise<void> {
     const { uow, transactions, logger } = this.deps;
     try {
-      await uow.run(async () => {
+      const failed = await uow.run(async () => {
         const locked = await this.lockIfStillDue(candidate);
         if (!locked) {
-          return;
+          return undefined;
         }
         const { wallet, transaction, now } = locked;
         transaction.fail(FailureCode.InternalError, wallet.balance, now);
@@ -156,8 +175,11 @@ export class ResolvePendingReferences {
         await this.emit([
           WagerTransactionFailed.from(transaction, this.contextFor(transaction, now)()),
         ]);
-        this.record(transaction);
+        return transaction;
       });
+      if (failed) {
+        this.record(failed);
+      }
     } catch (error) {
       safely(() =>
         logger.error('pending_reference.mark_failed_failed', {
