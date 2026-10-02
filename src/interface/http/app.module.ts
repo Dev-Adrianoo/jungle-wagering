@@ -8,13 +8,17 @@ import {
   Module,
   type OnApplicationShutdown,
 } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import type { ProviderIdentityPort } from '../../application/ports/provider-identity-port';
 import { buildCore, type Core } from '../../composition/core';
 import type { AppConfig } from '../../config/config';
+import { NoopIdentityAdapter } from '../../infrastructure/auth/noop-identity-adapter';
 import { buildOrmConfig } from '../../infrastructure/persistence/orm.config';
+import { AuthGuard } from './auth/auth.guard';
 import { HealthController } from './controllers/health.controller';
 import { WageringController } from './controllers/wagering.controller';
 import { WalletsController } from './controllers/wallets.controller';
-import { APP_CONFIG, CORE } from './tokens';
+import { APP_CONFIG, CORE, PROVIDER_IDENTITY_PORT } from './tokens';
 
 @Injectable()
 class OrmLifecycle implements OnApplicationShutdown {
@@ -28,7 +32,11 @@ class OrmLifecycle implements OnApplicationShutdown {
 @Module({})
 class AppModule {}
 
-export function registerAppModule(config: AppConfig): DynamicModule {
+export interface AppOverrides {
+  identityPort?: ProviderIdentityPort;
+}
+
+export function registerAppModule(config: AppConfig, overrides: AppOverrides = {}): DynamicModule {
   return {
     module: AppModule,
     controllers: [HealthController, WalletsController, WageringController],
@@ -44,6 +52,11 @@ export function registerAppModule(config: AppConfig): DynamicModule {
         useFactory: (orm: MikroORM): Core =>
           buildCore(orm, { lockTimeoutMs: config.lockTimeoutMs }),
       },
+      {
+        provide: PROVIDER_IDENTITY_PORT,
+        useValue: overrides.identityPort ?? new NoopIdentityAdapter(),
+      },
+      { provide: APP_GUARD, useClass: AuthGuard },
       OrmLifecycle,
     ],
   };

@@ -6,6 +6,7 @@ import type { Core } from '../../../composition/core';
 import { WagerTransactionStatus } from '../../../domain/wagering/wager-transaction';
 import { parseWith } from '../../contracts/parse';
 import { parseIdempotencyKey, wagerPayloadSchema } from '../../contracts/wager-payload.schema';
+import { Roles } from '../auth/decorators';
 import { CorrelationId } from '../correlation';
 import { CORE } from '../tokens';
 
@@ -35,6 +36,7 @@ export class WageringController {
   constructor(@Inject(CORE) private readonly core: Core) {}
 
   @Post('wagering/transactions')
+  @Roles('provider')
   async submit(
     @Headers('idempotency-key') idempotencyKeyHeader: unknown,
     @Body() body: unknown,
@@ -49,12 +51,14 @@ export class WageringController {
   }
 
   @Get('wagering/transactions/:transactionId')
+  @Roles('operator', 'auditor')
   getById(@Param() params: unknown): Promise<TransactionView> {
     const { transactionId } = parseWith(transactionParamsSchema, params);
     return this.core.transactionQueries.getById(transactionId);
   }
 
   @Get('providers/:providerId/wagering/transactions/:externalTransactionId')
+  @Roles('provider', 'operator', 'auditor')
   getByProvider(@Param() params: unknown): Promise<TransactionView> {
     const { providerId, externalTransactionId } = parseWith(
       providerTransactionParamsSchema,

@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import type { AddressInfo } from 'node:net';
+import type { AppOverrides } from '../../src/interface/http/app.module';
 import { createApp } from '../../src/interface/http/create-app';
 import type { TestDatabase } from './database';
 
@@ -14,13 +15,14 @@ export interface CallOptions {
   headers?: Record<string, string>;
 }
 
-export async function startTestApp(db: TestDatabase): Promise<TestApp> {
-  const app = await createApp({
-    port: 0,
-    databaseUrl: db.databaseUrl,
-    lockTimeoutMs: 3000,
-    authMode: 'noop',
-  });
+export async function startTestApp(
+  db: TestDatabase,
+  overrides: AppOverrides = {},
+): Promise<TestApp> {
+  const app = await createApp(
+    { port: 0, databaseUrl: db.databaseUrl, lockTimeoutMs: 3000, authMode: 'noop' },
+    overrides,
+  );
   await app.listen(0, '127.0.0.1');
   const { port } = app.getHttpServer().address() as AddressInfo;
   return { baseUrl: `http://127.0.0.1:${port}`, close: () => app.close() };

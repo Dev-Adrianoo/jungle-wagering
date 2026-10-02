@@ -1,7 +1,9 @@
 import { MikroORM } from '@mikro-orm/postgresql';
 import { Controller, Get, Inject, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { Public } from '../auth/decorators';
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(@Inject(MikroORM) private readonly orm: MikroORM) {}
