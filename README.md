@@ -241,9 +241,13 @@ Clientes de desenvolvimento (segredo = `<cliente>-dev-secret`):
 Obter um token e usar:
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/realms/wagering/protocol/openid-connect/token   -d grant_type=client_credentials -d client_id=operator -d client_secret=operator-dev-secret   | sed -E 's/.*"access_token":"([^"]+)".*//')
+TOKEN=$(curl -s -X POST http://localhost:8080/realms/wagering/protocol/openid-connect/token \
+  -d grant_type=client_credentials -d client_id=operator -d client_secret=operator-dev-secret \
+  | sed -E 's/.*"access_token":"([^"]+)".*/\1/')
 
-curl -s -X POST $BASE/wallets   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json'   -d "{\"playerId\":\"$PLAYER_ID\",\"initialBalance\":{\"amount\":\"100.00\",\"currency\":\"BRL\"}}"
+curl -s -X POST $BASE/wallets \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"playerId\":\"$PLAYER_ID\",\"initialBalance\":{\"amount\":\"100.00\",\"currency\":\"BRL\"}}"
 ```
 
 Sem token: `401`. Papel errado: `403 FORBIDDEN`. `provider-a` enviando `providerId` de outro provedor: `403 PROVIDER_MISMATCH`. Keycloak fora do ar e chaves ainda não carregadas: `503` (pode reenviar).
